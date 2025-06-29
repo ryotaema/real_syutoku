@@ -32,5 +32,4 @@ https://github.com/IntelRealSense/librealsense
 ちなみに私は以下のコマンドでpipインストールを行いました:
 ```
 pip install pyrealsense2
-
 ```
