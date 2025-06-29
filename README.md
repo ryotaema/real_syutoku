@@ -24,6 +24,15 @@ python3 real_script/dataset_collect.py
 - `mp4_collect.py` : 録画用スクリプトです．録画ファイルはbag形式で保存されます。mp4形式に変換したい場合は、スクリプト実行後に表示される変換コマンドをコピーして実行してください．
 - `yolo_detection_D435.py` :yoloで作成したモデルの推論の検証を行う用のスクリプトです．(モデルはこのリポジトリに含まれていません)
 
+## OpenVINOのモデル変換について
+私のノートPCはCPUにintel iRISxeという内蔵GPUが含まれています．
+ですが，そのまま`.pt` モデルを利用することができないため
+```
+yolo export model=best.pt format=onnx
+ovc best.onnx --output_model openvino_model/best.xml
+```
+
+
 ## RealSence セットアップについて
 このプロジェクトでは Intel RealSense SDK (librealsense) を使用しています．
 セットアップ方法や対応デバイスについては公式リポジトリをご参照ください
