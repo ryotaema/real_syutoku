@@ -18,11 +18,11 @@ python3 real_script/dataset_collect.py
 ```
 ## 各スクリプト
 
-- `convert_bag_to_mp4.py` :bag形式をmp4形式に変換するスクリプト
-- `d405_dataset_collect.py` :realsense D405での画像取得用スクリプト
-- `dataset_collect.py` :realsense D435での画像取得用スクリプト
-- `mp4_collect.py` : 録画を行うためのスクリプト(出力はbag形式のためmp4に変換してください)
-- `yolo_detection_D435.py` :yoloで作成したモデルの推論の検証を行う用のスクリプト(モデルはこのリポジトリに含まれていません)
+- `convert_bag_to_mp4.py` :bag形式をmp4形式に変換するスクリプトです．
+- `d405_dataset_collect.py` :realsense D405での画像取得用スクリプトです．
+- `dataset_collect.py` :realsense D435での画像取得用スクリプトです．
+- `mp4_collect.py` : 録画用スクリプトです．録画ファイルはbag形式で保存されます。mp4形式に変換したい場合は、スクリプト実行後に表示される変換コマンドをコピーして実行してください．
+- `yolo_detection_D435.py` :yoloで作成したモデルの推論の検証を行う用のスクリプトです．(モデルはこのリポジトリに含まれていません)
 
 ## RealSence セットアップについて
 このプロジェクトでは Intel RealSense SDK (librealsense) を使用しています．

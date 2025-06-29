@@ -4,7 +4,7 @@ import cv2
 from ultralytics import YOLO
 import gc
 
-
+#学習済みモデルパス
 YOLO_MODEL_PATH = '/home/ryota/annot_labelimg/real_syutoku/real_script/model/250626_weights/best.pt'
 
 
@@ -57,7 +57,7 @@ if __name__ == '__main__':
     # YOLOモデルのロード
     model = YOLO(YOLO_MODEL_PATH)
     
-    # 推論に使用するプロセッサを指定
+    # 推論に使用するプロセッサを指定(GPUある場合)
     #model.to("cuda")
     try:
         while True:
