@@ -24,6 +24,7 @@ python3 real_script/dataset_collect.py
 - `mp4_collect.py` : 録画用スクリプトです．録画ファイルはbag形式で保存されます．mp4形式に変換したい場合は、スクリプト実行後に表示される変換コマンドをコピーして実行してください．
 - `yolo_detection_D435.py` :yoloで作成したモデルの推論の検証を行う用のスクリプトです．(モデルはこのリポジトリに含まれていません)
 - `click_script/click_dataset.py` :テストデータを作成するためのスクリプトです．クリックをすると座標に印をつけることができ，「s」で保存，「q」で終了です．
+- `click_script/bbox_click.py` :click_dataset.pyで作成した印付きの画像をアノテーションするためのスクリプト．
 
 ## OpenVINOのモデル変換について
 私のノートPCはCPUにintel iRISxeという内蔵GPUが含まれています．
