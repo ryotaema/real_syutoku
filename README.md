@@ -21,8 +21,9 @@ python3 real_script/dataset_collect.py
 - `convert_bag_to_mp4.py` :bag形式をmp4形式に変換するスクリプトです．
 - `d405_dataset_collect.py` :realsense D405での画像取得用スクリプトです．
 - `dataset_collect.py` :realsense D435での画像取得用スクリプトです．
-- `mp4_collect.py` : 録画用スクリプトです．録画ファイルはbag形式で保存されます。mp4形式に変換したい場合は、スクリプト実行後に表示される変換コマンドをコピーして実行してください．
+- `mp4_collect.py` : 録画用スクリプトです．録画ファイルはbag形式で保存されます．mp4形式に変換したい場合は、スクリプト実行後に表示される変換コマンドをコピーして実行してください．
 - `yolo_detection_D435.py` :yoloで作成したモデルの推論の検証を行う用のスクリプトです．(モデルはこのリポジトリに含まれていません)
+- `click_script/click_dataset.py` :テストデータを作成するためのスクリプトです．クリックをすると座標に印をつけることができ，「s」で保存，「q」で終了です．
 
 ## OpenVINOのモデル変換について
 私のノートPCはCPUにintel iRISxeという内蔵GPUが含まれています．
