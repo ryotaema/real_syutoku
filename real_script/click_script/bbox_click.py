@@ -9,33 +9,46 @@ label_class = 0  # 必要に応じて変更
 
 # === グローバル変数 ===
 drawing = False
+deleting = False
 ix, iy = -1, -1
 boxes = []
 current_image = None
 current_index = 0
 
+# === 削除判定の補助 ===
+def inside_bbox(x, y, bbox):
+    x1, y1, x2, y2 = bbox
+    return x1 <= x <= x2 and y1 <= y <= y2
+
 # === マウスイベントコールバック ===
 def draw_bbox(event, x, y, flags, param):
-    global ix, iy, drawing, boxes
+    global ix, iy, drawing, boxes, deleating
 
-    if event == cv2.EVENT_LBUTTONDOWN:
-        drawing = True
-        ix, iy = x, y
-
-    elif event == cv2.EVENT_MOUSEMOVE and drawing:
-        temp_image = current_image.copy()
-        for box in boxes:
-            cv2.rectangle(temp_image, (box[0], box[1]), (box[2], box[3]), (0, 255, 255), 2)
-        cv2.rectangle(temp_image, (ix, iy), (x, y), (0, 0, 255), 2)
-        cv2.imshow('Image', temp_image)
-
-    elif event == cv2.EVENT_LBUTTONUP:
-        drawing = False
-        x1, y1 = min(ix, x), min(iy, y)
-        x2, y2 = max(ix, x), max(iy, y)
-        if abs(x2 - x1) > 10 and abs(y2 - y1) > 5:
-            boxes.append((x1, y1, x2, y2))
-            print(f"追加: bbox=({x1}, {y1}) - ({x2}, {y2})")
+    if deleting:
+        if event == cv2.EVENT_LBUTTONDOWN:
+            for i, box in enumerate(boxes):
+                if inside_bbox(x, y, box):
+                    print(f"削除: bbox=({box[0]}, {box[1]}) - ({box[2]}, {box[3]})")
+                    del boxes[i]
+                    break
+    else:
+        if event == cv2.EVENT_LBUTTONDOWN:
+            drawing = True
+            ix, iy = x, y
+        
+        elif event == cv2.EVENT_MOUSEMOVE and drawing:
+            temp_image = current_image.copy()
+            for box in boxes:
+                cv2.rectangle(temp_image, (box[0], box[1]), (box[2], box[3]), (0, 255, 255), 2)
+            cv2.rectangle(temp_image, (ix, iy), (x, y), (0, 0, 255), 2)
+            cv2.imshow('Image', temp_image)
+        elif event == cv2.EVENT_LBUTTONUP:
+            drawing = False
+            x1, y1 = min(ix, x), min(iy, y)
+            x2, y2 = max(ix, x), max(iy, y)
+            if abs(x2 - x1) > 10 and abs(y2 - y1) > 5:
+                boxes.append((x1, y1, x2, y2))
+                print(f"追加: bbox=({x1}, {y1}) - ({x2}, {y2})")
 
 # === YOLO形式で保存 ===
 def save_yolo_format(image_path, bboxes):
@@ -96,8 +109,8 @@ for image_path in image_paths:
                 x, y = map(int, line.strip().split(','))
                 cv2.circle(current_image, (x, y), 5, (0, 255, 0), -1)
 
-    print(f"\n🖼️ 現在の画像: {image_path}")
-    print("操作: マウスドラッグ→bbox追加, 's'→保存, 'n'→次画像, 'q'→終了")
+    print(f"\n現在の画像: {image_path}")
+    print("操作: マウスドラッグ→bbox追加, 's'→保存, 'd'→削除(on/off), 'n'→次画像, 'q'→終了")
 
     while True:
         display = current_image.copy()
@@ -109,6 +122,9 @@ for image_path in image_paths:
 
         if key == ord('s'):
             save_yolo_format(image_path, boxes)
+        elif key == ord('d'):
+            deleting = not deleting
+            print(f"削除モード: {'ON' if deleting else 'OFF'}")
         elif key == ord('n'):
             break
         elif key == ord('q'):
