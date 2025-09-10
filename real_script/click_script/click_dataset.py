@@ -25,7 +25,7 @@ def mouse_callback(event, x, y, flags, param):
 # RealSense設定
 pipeline = rs.pipeline()
 config = rs.config()
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)#size
 
 pipeline.start(config)
 print("マウスで検出対象をクリックしてください。's' で保存、'q' で終了")
@@ -62,7 +62,7 @@ try:
                 for pt in click_points:
                     f.write(f"{pt[0]},{pt[1]}\n")
 
-            print(f"✅ 保存しました: {image_path}, {txt_path}")
+            print(f"保存しました: {image_path}, {txt_path}")
             click_points.clear()  # 次の保存に備えてクリア
 
         elif key == ord('q'):
