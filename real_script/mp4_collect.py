@@ -1,6 +1,9 @@
-import pyrealsense2 as rs
+#mp4の録画を出力するために作成したスクリプト
+#出力はbagファイルのため，別途作成している変換用のスクリプトを利用してください．
+
+import pyrealsense2 as rs # type: ignore
 import numpy as np
-import cv2
+import cv2 # type: ignore
 import os
 import time
 import gc
@@ -17,6 +20,8 @@ bag_path = os.path.join(save_dir, f'stream_{timestamp}.bag')
 config = rs.config()
 config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+config.enable_stream(rs.stream.infrared, 1, 640, 480, rs.format.y8, 30)
+config.enable_stream(rs.stream.infrared, 2, 640, 480, rs.format.y8, 30)
 config.enable_record_to_file(bag_path)
 
 # ストリーミング開始
@@ -57,12 +62,19 @@ try:
 
 finally:
     # ストリーミング停止
-    pipeline.stop()
-    cv2.destroyAllWindows()
-    del color_frame, color_image
-    gc.collect()
-    print("録画終了。ファイルの書き込みが完了するまで待機中...")
-    time.sleep(5)
+    #pipeline.stop()
+    #cv2.destroyAllWindows()
+    print("録画停止... 'q' が押されました。")
+    pipeline.stop()
+    cv2.destroyAllWindows()
+    
+    print("ファイルの最終処理（インデックス書き込み）を実行中...")
+    del pipeline
+    
+    #del color_frame, color_image
+    #gc.collect()
+    #print("録画終了。ファイルの書き込みが完了するまで待機中...")
+    #time.sleep(5)
 
 print("録画終了、.bagファイル保存完了,以下を実行してください")
-print(f"python3 convert_bag_to_mp4.py ~/annot_labelimg/real_syutoku/data/mp4/stream_{timestamp}.bag" )
+print(f"python3 convert_bag_to_mp4.py {bag_path}")
