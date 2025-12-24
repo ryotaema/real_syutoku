@@ -1,3 +1,13 @@
+#---------------
+#データセットのディレクトリ構成が以下のようになっているか確認してください．
+# testdata
+# ├── images
+# ├── labels
+# └── points
+#
+#フォルダ選択する際はimagesを選択してください．
+#---------------
+
 import cv2
 import os
 import glob
