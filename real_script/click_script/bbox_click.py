@@ -161,7 +161,8 @@ def load_points(image_path):
     return points
 
 # === メインループ ===
-cv2.namedWindow('Image')
+# cv2.namedWindow('Image')
+cv2.namedWindow('Image', cv2.WINDOW_NORMAL)
 cv2.setMouseCallback('Image', draw_bbox)
 
 print_usage()
