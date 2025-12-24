@@ -1,11 +1,40 @@
 import cv2
 import os
 import glob
+import tkinter as tk
+from tkinter import filedialog
 
 # === 設定 ===
-base_dir = os.path.expanduser('~/annot_labelimg/real_syutoku/data/click_test_data/')
-image_paths = sorted(glob.glob(os.path.join(base_dir, 'image_*.jpg')))
-label_class = 0  # 必要に応じて変更
+def select_directory():
+    root = tk.Tk()
+    root.withdraw()  # メインウィンドウを隠す
+    
+    # フォルダ選択ダイアログを表示
+    dir_path = filedialog.askdirectory(title="画像が含まれるフォルダを選択してください")
+    root.destroy()
+    
+    if not dir_path:
+        print("フォルダが選択されませんでした。終了します。")
+        exit()
+        
+    # 指定されたフォルダ内の画像をリストアップ (jpg, jpeg, pngに対応)
+    valid_extensions = ('*.jpg', '*.jpeg', '*.png', '*.JPG', '*.PNG')
+    image_paths = []
+    for ext in valid_extensions:
+        image_paths.extend(glob.glob(os.path.join(dir_path, ext)))
+    
+    return sorted(image_paths), dir_path
+
+# 実行
+image_paths, base_dir = select_directory()
+
+if not image_paths:
+    print("選択されたフォルダに画像が見つかりませんでした。")
+    exit()
+    
+# 基準となるディレクトリ（保存先などのために取得）
+base_dir = os.path.dirname(image_paths[0])
+label_class = 0
 
 # === グローバル変数 ===
 drawing = False
