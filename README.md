@@ -16,6 +16,12 @@
 #利用例(画像の取得)
 python3 real_script/dataset_collect.py
 ```
+### bbox_click.pyの事前準備
+```
+sudo apt update
+sudo apt install python3-tk
+```
+
 ## 各スクリプト
 
 - `convert_bag_to_mp4.py` :bag形式をmp4形式に変換するスクリプトです．
