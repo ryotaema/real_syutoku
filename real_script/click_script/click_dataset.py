@@ -53,7 +53,7 @@ try:
 
         if key == ord('s'):
             # 保存処理
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             image_path = os.path.join(base_dir, f"image_{timestamp}.jpg")
             txt_path = os.path.join(base_dir, f"points_{timestamp}.txt")
 
