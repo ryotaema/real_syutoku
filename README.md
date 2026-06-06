@@ -128,17 +128,17 @@ source openvino_env/bin/activate
 python3 detect/vino_yolo_detection_D435.py
 ```
 
-### ICP点群合わせ込み
+### 点群合わせ込み・マージ
 
 ```bash
 # カメラ固定・物体静止（全フレーム→frame0に位置合わせ）
-python3 process/icp_merge.py data/pointcloud/2026-06-06/session_120000
+python3 process/point_merge.py data/pointcloud/2026-06-06/session_120000
 
 # カメラ固定・物体回転（frame-to-frame逐次位置合わせ）
-python3 process/icp_merge.py data/pointcloud/2026-06-06/session_120000 --sequential
+python3 process/point_merge.py data/pointcloud/2026-06-06/session_120000 --sequential
 
 # パラメータ上書き
-python3 process/icp_merge.py <session_dir> --voxel-size 0.003 --icp-threshold 0.01
+python3 process/point_merge.py <session_dir> --voxel-size 0.003 --icp-threshold 0.01
 ```
 
 出力: `<session_dir>/merged_pointcloud.ply` と変換行列 `icp_result.json`
