@@ -2,12 +2,14 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
-import yaml
+import sys
 from pathlib import Path
 from datetime import datetime
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import load_config, build_parser, apply_args
 
-with open(Path(__file__).parent.parent / "config.yaml") as _f:
-    _cfg = yaml.safe_load(_f)
+_args = build_parser().parse_args()
+_cfg  = apply_args(load_config(), _args)
 
 W   = _cfg['camera']['width']
 H   = _cfg['camera']['height']

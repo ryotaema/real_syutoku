@@ -20,7 +20,10 @@ real_syutoku/
 ## セットアップ
 
 ```bash
-pip install pyrealsense2
+pip install -r real_script/requirements.txt
+
+# ICP合わせ込みスクリプト使用時のみ（強いPCで実行する場合も同様）
+pip install -r real_script/requirements_processing.txt
 
 # アノテーションツール使用時のみ
 sudo apt install python3-tk
@@ -52,6 +55,29 @@ model:
 
 すべてのスクリプトは `real_script/` を起点に実行してください．
 
+### CLI オプション
+
+`config.yaml` を編集せずに、実行時だけ設定を上書きできます．
+
+| オプション | 対象 | 例 |
+|---|---|---|
+| `--fps N` | collect / record / detect | `--fps 15` |
+| `--width N` | collect / record / detect | `--width 1280` |
+| `--height N` | collect / record / detect | `--height 720` |
+| `--model PATH` | record_with_yolo / detect | `--model /path/to/model.pt` |
+| `--conf F` | vino_yolo_detection のみ | `--conf 0.5` |
+
+```bash
+# D435 で 4 ストリームを 15 FPS で収集
+python3 collect/dataset_collect.py --fps 15
+
+# 別モデルで推論
+python3 detect/yolo_detection_D435.py --model model/other_model.pt
+
+# OpenVINO の信頼度を上げて推論
+python3 detect/vino_yolo_detection_D435.py --conf 0.5
+```
+
 ### データ収集
 
 ```bash
@@ -63,6 +89,11 @@ python3 collect/d405_dataset_collect.py
 
 # D435 + 点群（.ply）
 python3 collect/dataset_point_collect.py
+
+# ICP用点群データ収集（intrinsics.json + 生深度付き）
+python3 collect/pointcloud_capture.py                  # auto: 50フレーム自動取得
+python3 collect/pointcloud_capture.py --frames 100     # フレーム数指定
+python3 collect/pointcloud_capture.py --mode manual    # manual: [s]で1枚ずつ取得
 
 # 1枚ずつ保存（s で保存，q で終了）
 python3 collect/dataset_collect_photo.py
@@ -96,6 +127,21 @@ python3 detect/yolo_detection_D435.py
 source openvino_env/bin/activate
 python3 detect/vino_yolo_detection_D435.py
 ```
+
+### ICP点群合わせ込み
+
+```bash
+# カメラ固定・物体静止（全フレーム→frame0に位置合わせ）
+python3 process/icp_merge.py data/pointcloud/2026-06-06/session_120000
+
+# カメラ固定・物体回転（frame-to-frame逐次位置合わせ）
+python3 process/icp_merge.py data/pointcloud/2026-06-06/session_120000 --sequential
+
+# パラメータ上書き
+python3 process/icp_merge.py <session_dir> --voxel-size 0.003 --icp-threshold 0.01
+```
+
+出力: `<session_dir>/merged_pointcloud.ply` と変換行列 `icp_result.json`
 
 ### アノテーション
 

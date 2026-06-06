@@ -6,21 +6,18 @@ import numpy as np
 import cv2
 import os
 import sys
-import yaml
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import load_config, build_parser, apply_args
 
-with open(Path(__file__).parent.parent / "config.yaml") as _f:
-    _cfg = yaml.safe_load(_f)
+_args = build_parser(bag_input=True).parse_args()
+_cfg  = apply_args(load_config(), _args)
 
 W   = _cfg['camera']['width']
 H   = _cfg['camera']['height']
 FPS = _cfg['camera']['fps']
 
-if len(sys.argv) < 2:
-    print("使い方: python3 convert_bag_to_mp4.py <bagファイルパス>")
-    sys.exit(1)
-
-bag_path = os.path.expanduser(sys.argv[1])
+bag_path = os.path.expanduser(_args.bag_path)
 
 if not os.path.exists(bag_path):
     print(f"指定された.bagファイルが見つかりません: {bag_path}")

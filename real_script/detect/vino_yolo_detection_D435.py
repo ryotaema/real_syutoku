@@ -5,11 +5,13 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 import gc
-import yaml
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import load_config, build_parser, apply_args
 
-with open(Path(__file__).parent.parent / "config.yaml") as _f:
-    _cfg = yaml.safe_load(_f)
+_args = build_parser(include_model=True, include_conf=True).parse_args()
+_cfg  = apply_args(load_config(), _args, model_key='openvino_path')
 
 W   = _cfg['camera']['width']
 H   = _cfg['camera']['height']

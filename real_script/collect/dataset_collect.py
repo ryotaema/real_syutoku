@@ -3,12 +3,14 @@ import numpy as np
 import cv2
 import os
 import gc
-import yaml
+import sys
 from pathlib import Path
 from datetime import datetime
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import load_config, build_parser, apply_args
 
-with open(Path(__file__).parent.parent / "config.yaml") as _f:
-    _cfg = yaml.safe_load(_f)
+_args = build_parser().parse_args()
+_cfg  = apply_args(load_config(), _args)
 
 W   = _cfg['camera']['width']
 H   = _cfg['camera']['height']
@@ -152,10 +154,11 @@ try:
         cv2.imwrite(os.path.join(path6, f"{i}_ir_right_color.jpg"), ir_colormap2)
 
         i += 1
+        print(f"\rsaved: {i} frames", end="", flush=True)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            print("保存を停止します。")
+            print("\n保存を停止します。")
             break
 
 finally:

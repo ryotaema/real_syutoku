@@ -12,3 +12,11 @@ model:
   yolo_path: model/260217_pepper_yolov11x_aug.pt
   openvino_path: model/250626_weights/openvino_model/best.xml
   confidence_threshold: 0.3
+
+pointcloud:
+  output_dir: ~/annot_labelimg/real_syutoku/data/pointcloud
+  capture_frames: 50   # autoモードのデフォルトフレーム数
+  min_depth: 0.1       # 深度フィルタの最小距離 (m)
+  max_depth: 1.0       # 深度フィルタの最大距離 (m)　← 対象物体に合わせて変更
+  voxel_size: 0.005    # ICP前処理・出力のダウンサンプリング解像度 (m)
+  icp_threshold: 0.02  # ICP 最大対応点距離 (m)

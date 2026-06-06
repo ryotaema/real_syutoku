@@ -1,0 +1,9 @@
+リアルセンスを用いて学習に使うデータを取得するプログラムがあるファイルです。
+
+real_script/dataset_collect.pyでデータの収集を行うことができます。
+data/imagesに保存されます。
+
+real_script/mp4_collect.pyで録画のbagファイルを取得できます。
+コメントアウトに従い、convert_bag_to_mp4.pyを実行することでmp4ファイルに変換することができます。
+
+real_script/yolo_detection_D435でyoloで学習したデータの推論を行うことが出来ます。
