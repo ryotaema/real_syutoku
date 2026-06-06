@@ -1,53 +1,137 @@
 # real_syutoku
 
-このリポジトリは、ロボットの画像取得・アノテーション用データ収集・推論modelの検証用スクリプト郡．
+ロボット（ピーマン収穫）向けの画像取得・アノテーション・推論モデル検証用スクリプト群．
 
-## 構成
-
-- `data/`：画像保存用ディレクトリ
-- `scripts/`：カメラ操作・保存スクリプト
-
-## 使用方法
-
-1. Realsense カメラを接続
-2. スクリプトを実行
+## ディレクトリ構成
 
 ```
-#利用例(画像の取得)
-python3 real_script/dataset_collect.py
+real_syutoku/
+├── real_script/
+│   ├── config.yaml          # 解像度・FPS・出力先・モデルパスの設定
+│   ├── collect/             # 静止画データ収集
+│   ├── record/              # 動画録画
+│   ├── detect/              # リアルタイム推論
+│   └── click_script/        # アノテーションツール
+└── data/
+    ├── images/              # 収集画像（YYYY-MM-DD/image_N/）
+    └── mp4/                 # 録画ファイル
 ```
-### bbox_click.pyの事前準備
-```
-sudo apt update
+
+## セットアップ
+
+```bash
+pip install pyrealsense2
+
+# アノテーションツール使用時のみ
 sudo apt install python3-tk
 ```
 
-## 各スクリプト
+OpenVINOを使う場合は `openvino_env/` の仮想環境を使用してください．
 
-- `convert_bag_to_mp4.py` :bag形式をmp4形式に変換するスクリプトです．
-- `d405_dataset_collect.py` :realsense D405での画像取得用スクリプトです．
-- `dataset_collect.py` :realsense D435での画像取得用スクリプトです．
-- `dataset_point_collect.py` :realsense D435での画像と点群データの取得用スクリプトです．
-- `mp4_collect.py` : 録画用スクリプトです．録画ファイルはbag形式で保存されます．mp4形式に変換したい場合は、スクリプト実行後に表示される変換コマンドをコピーして実行してください．
-- `yolo_detection_D435.py` :yoloで作成したモデルの推論の検証を行う用のスクリプトです．(モデルはこのリポジトリに含まれていません)
-- `click_script/click_dataset.py` :テストデータを作成するためのスクリプトです．クリックをすると座標に印をつけることができ，「s」で保存，「q」で終了です．
-- `click_script/bbox_click.py` :click_dataset.pyで作成した印付きの画像をアノテーションするためのスクリプト．
+## 設定ファイル
 
-## OpenVINOのモデル変換について
-私のノートPCはCPUにintel iRISxeという内蔵GPUが含まれています．
-ですが，そのまま`.pt` モデルを利用することができないため
+解像度・FPS・出力先・モデルパスは `real_script/config.yaml` で一元管理しています．スクリプトを実行する前に必要に応じて編集してください．
+
+```yaml
+camera:
+  width: 640
+  height: 480
+  fps: 30  # D435で4ストリーム同時使用時は15を推奨
+
+output:
+  images_dir: ~/annot_labelimg/real_syutoku/data/images
+  mp4_dir: ~/annot_labelimg/real_syutoku/data/mp4
+
+model:
+  yolo_path: model/260217_pepper_yolov11x_aug.pt
+  openvino_path: model/250626_weights/openvino_model/best.xml
+  confidence_threshold: 0.3
 ```
+
+## 使い方
+
+すべてのスクリプトは `real_script/` を起点に実行してください．
+
+### データ収集
+
+```bash
+# D435：Enter で収集開始，q で停止
+python3 collect/dataset_collect.py
+
+# D405
+python3 collect/d405_dataset_collect.py
+
+# D435 + 点群（.ply）
+python3 collect/dataset_point_collect.py
+
+# 1枚ずつ保存（s で保存，q で終了）
+python3 collect/dataset_collect_photo.py
+```
+
+収集画像は `images_dir/YYYY-MM-DD/image_N/{color, depth, ir_left, ...}/` に保存されます．
+
+### 動画録画
+
+```bash
+# .bag 形式で録画（終了後に変換コマンドが表示されます）
+python3 record/mp4_collect.py
+
+# .bag + .mp4 を同時録画
+python3 record/record_realsense.py
+
+# .bag + YOLO検出済み .mp4 を同時録画
+python3 record/record_with_yolo.py
+
+# .bag → .mp4 変換
+python3 record/convert_bag_to_mp4.py <bagファイルのパス>
+```
+
+### 推論
+
+```bash
+# PyTorch（.pt モデル）
+python3 detect/yolo_detection_D435.py
+
+# OpenVINO（内蔵GPU使用）
+source openvino_env/bin/activate
+python3 detect/vino_yolo_detection_D435.py
+```
+
+### アノテーション
+
+```bash
+# テストデータ作成（クリックで座標記録）
+python3 click_script/click_dataset.py
+
+# バウンディングボックスアノテーション（YOLO形式 .txt 出力）
+python3 click_script/bbox_click.py
+```
+
+**bbox_click.py の操作：**
+| キー/操作 | 動作 |
+|---|---|
+| 左ドラッグ（空白） | BBox新規作成 |
+| 左ドラッグ（角） | BBoxリサイズ |
+| 左ドラッグ（内部） | BBox移動 |
+| [d] / [a] | 次/前の画像（[d]は自動保存） |
+| [s] | 保存 |
+| [c] | 前画像のBBoxをコピー |
+| [z] | 直前のBBoxを取り消し |
+| [Delete] | 選択中のBBoxを削除 |
+| 矢印キー | 選択中のBBoxを1px移動 |
+
+## OpenVINO モデル変換
+
+```bash
 yolo export model=best.pt format=onnx
 ovc best.onnx --output_model openvino_model/best.xml
 ```
 
+## RealSense セットアップ
 
-## RealSence セットアップについて
-このプロジェクトでは Intel RealSense SDK (librealsense) を使用しています．
-セットアップ方法や対応デバイスについては公式リポジトリをご参照ください
-https://github.com/IntelRealSense/librealsense
+Intel RealSense SDK (librealsense) を使用しています．
+公式リポジトリ: https://github.com/IntelRealSense/librealsense
 
-ちなみに私は以下のコマンドでpipインストールを行いました:
-```
+```bash
 pip install pyrealsense2
 ```
