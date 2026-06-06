@@ -70,7 +70,7 @@ def main():
     pc_cfg = cfg['pointcloud']
 
     parser = argparse.ArgumentParser(
-        description='ICP による点群の位置合わせ・マージ',
+        description='点群の位置合わせ・マージ',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument('session_dir', nargs='?', default=None,
@@ -217,9 +217,9 @@ def main():
         'output_file':   'merged_pointcloud.ply',
         'transforms':    [T.tolist() for T in transforms],
     }
-    with open(session_dir / 'icp_result.json', 'w') as f:
+    with open(session_dir / 'merge_result.json', 'w') as f:
         json.dump(result_meta, f, indent=2)
-    print(f"変換行列 → icp_result.json")
+    print(f"変換行列 → merge_result.json")
 
 
 if __name__ == '__main__':
