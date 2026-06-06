@@ -1,17 +1,31 @@
+# D405でのデータセットを取得するスクリプト
+
 import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
 import gc
+import yaml
+from pathlib import Path
+from datetime import datetime
+
+with open(Path(__file__).parent.parent / "config.yaml") as _f:
+    _cfg = yaml.safe_load(_f)
+
+W   = _cfg['camera']['width']
+H   = _cfg['camera']['height']
+FPS = _cfg['camera']['fps']
 
 # 保存フォルダ設定
 i = 0
 j = 1
-save_dir = os.path.expanduser('~/annot_labelimg/real_syutoku/data/images/')
-os.makedirs(save_dir, exist_ok=True)
+save_dir = os.path.expanduser(_cfg['output']['images_dir'])
+date_str = datetime.now().strftime('%Y-%m-%d')
+save_dir_dated = os.path.join(save_dir, date_str)
+os.makedirs(save_dir_dated, exist_ok=True)
 
 while True:
-    base_path = os.path.join(save_dir, f"image_{j}")
+    base_path = os.path.join(save_dir_dated, f"image_{j}")
     if not os.path.exists(base_path):
         os.makedirs(base_path)
         break
@@ -19,12 +33,11 @@ while True:
         print("ファイルが存在しています: " + base_path)
         j += 1
 
-# 各画像保存先ディレクトリ作成
-path_color = os.path.join(base_path, "color/")
-path_depth = os.path.join(base_path, "depth/")
-path_ir_left = os.path.join(base_path, "ir_left/")
-path_ir_right = os.path.join(base_path, "ir_right/")
-path_ir_left_color = os.path.join(base_path, "ir_left_color/")
+path_color          = os.path.join(base_path, "color/")
+path_depth          = os.path.join(base_path, "depth/")
+path_ir_left        = os.path.join(base_path, "ir_left/")
+path_ir_right       = os.path.join(base_path, "ir_right/")
+path_ir_left_color  = os.path.join(base_path, "ir_left_color/")
 path_ir_right_color = os.path.join(base_path, "ir_right_color/")
 
 for path in [path_color, path_depth, path_ir_left, path_ir_right, path_ir_left_color, path_ir_right_color]:
@@ -35,10 +48,10 @@ print("Save directory:", base_path)
 # RealSense 設定
 pipeline = rs.pipeline()
 config = rs.config()
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)  # カラー追加
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-config.enable_stream(rs.stream.infrared, 1, 640, 480, rs.format.y8, 30)
-config.enable_stream(rs.stream.infrared, 2, 640, 480, rs.format.y8, 30)
+config.enable_stream(rs.stream.color,      W, H, rs.format.bgr8, FPS)
+config.enable_stream(rs.stream.depth,      W, H, rs.format.z16,  FPS)
+config.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8,  FPS)
+config.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8,  FPS)
 
 pipeline.start(config)
 
@@ -53,31 +66,27 @@ try:
         if not color_frame or not depth_frame or not ir_frame1 or not ir_frame2:
             continue
 
-        # NumPy配列変換
         color_image = np.asanyarray(color_frame.get_data())
         depth_image = np.asanyarray(depth_frame.get_data())
         ir_image1 = np.asanyarray(ir_frame1.get_data())
         ir_image2 = np.asanyarray(ir_frame2.get_data())
 
-        # カラーマップ変換
         ir_colormap1 = cv2.applyColorMap(cv2.convertScaleAbs(ir_image1), cv2.COLORMAP_JET)
         ir_colormap2 = cv2.applyColorMap(cv2.convertScaleAbs(ir_image2), cv2.COLORMAP_JET)
         depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.4), cv2.COLORMAP_JET)
 
-        # 表示
         images = np.vstack((
             np.hstack((color_image, depth_colormap)),
             np.hstack((ir_colormap1, ir_colormap2))
         ))
         cv2.imshow('D405 View', images)
 
-        # 保存
-        cv2.imwrite(os.path.join(path_color,        f"{i:04d}_color.jpg"), color_image)
-        cv2.imwrite(os.path.join(path_depth,        f"{i:04d}_depth.jpg"), depth_colormap)
-        cv2.imwrite(os.path.join(path_ir_left,      f"{i:04d}_ir.jpg"),    ir_image1)
-        cv2.imwrite(os.path.join(path_ir_right,     f"{i:04d}_ir.jpg"),    ir_image2)
-        cv2.imwrite(os.path.join(path_ir_left_color,  f"{i:04d}_ir_color.jpg"), ir_colormap1)
-        cv2.imwrite(os.path.join(path_ir_right_color, f"{i:04d}_ir_color.jpg"), ir_colormap2)
+        cv2.imwrite(os.path.join(path_color,           f"{i:04d}_color.jpg"),    color_image)
+        cv2.imwrite(os.path.join(path_depth,           f"{i:04d}_depth.jpg"),    depth_colormap)
+        cv2.imwrite(os.path.join(path_ir_left,         f"{i:04d}_ir.jpg"),       ir_image1)
+        cv2.imwrite(os.path.join(path_ir_right,        f"{i:04d}_ir.jpg"),       ir_image2)
+        cv2.imwrite(os.path.join(path_ir_left_color,   f"{i:04d}_ir_color.jpg"), ir_colormap1)
+        cv2.imwrite(os.path.join(path_ir_right_color,  f"{i:04d}_ir_color.jpg"), ir_colormap2)
 
         i += 1
 

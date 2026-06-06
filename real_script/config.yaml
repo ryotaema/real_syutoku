@@ -1,0 +1,14 @@
+camera:
+  width: 640
+  height: 480
+  fps: 30  # D435で4ストリーム(color+depth+IR×2)同時使用時は15を推奨
+
+output:
+  images_dir: ~/annot_labelimg/real_syutoku/data/images
+  mp4_dir: ~/annot_labelimg/real_syutoku/data/mp4
+
+model:
+  # real_script/ からの相対パス
+  yolo_path: model/260217_pepper_yolov11x_aug.pt
+  openvino_path: model/250626_weights/openvino_model/best.xml
+  confidence_threshold: 0.3
