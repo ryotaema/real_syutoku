@@ -1,2 +1,4 @@
 CLAUDE.md
 real_script/model/
+data/
+openvino_env/
