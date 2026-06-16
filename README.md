@@ -181,3 +181,9 @@ Intel RealSense SDK (librealsense) を使用しています．
 ```bash
 pip install pyrealsense2
 ```
+
+## ライセンス
+
+このリポジトリは [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE) のもとで公開されています。
+
+本プロジェクトは [Ultralytics YOLO](https://github.com/ultralytics/ultralytics)（AGPL-3.0）を使用しているため、AGPL-3.0 に従い同ライセンスを適用しています。
