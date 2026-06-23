@@ -11,10 +11,12 @@ real_syutoku/
 │   ├── collect/             # 静止画データ収集
 │   ├── record/              # 動画録画
 │   ├── detect/              # リアルタイム推論
+│   ├── process/             # 後処理（点群マージ・タイムラプス集計）
 │   └── click_script/        # アノテーションツール
 └── data/
     ├── images/              # 収集画像（YYYY-MM-DD/image_N/）
-    └── mp4/                 # 録画ファイル
+    ├── mp4/                 # 録画ファイル
+    └── timelapse_data/      # 定点タイムラプス（YYYY-MM-DD_HHMMSS/）
 ```
 
 ## セットアップ
@@ -65,7 +67,11 @@ model:
 | `--width N` | collect / record / detect | `--width 1280` |
 | `--height N` | collect / record / detect | `--height 720` |
 | `--model PATH` | record_with_yolo / detect | `--model /path/to/model.pt` |
-| `--conf F` | vino_yolo_detection のみ | `--conf 0.5` |
+| `--conf F` | vino_yolo_detection / timelapse_detect（--detect 時） | `--conf 0.5` |
+| `--interval N` | timelapse_detect | `--interval 300` |
+| `--duration N` | timelapse_detect | `--duration 12` |
+| `--detect` | timelapse_detect | `--detect` |
+| `--relative-depth` | timelapse_detect | `--relative-depth` |
 
 ```bash
 # D435 で 4 ストリームを 15 FPS で収集
@@ -100,6 +106,49 @@ python3 collect/dataset_collect_photo.py
 ```
 
 収集画像は `images_dir/YYYY-MM-DD/image_N/{color, depth, ir_left, ...}/` に保存されます．
+
+### 定点タイムラプス撮影
+
+植物などの定点観察・時系列データ収集向けスクリプトです．5分間隔・12時間などの長時間無人撮影を想定しています．
+
+```bash
+# 基本（カラー + 深度 + IR を5分ごとに保存）
+python3 collect/timelapse_detect.py
+
+# 間隔・時間を変更
+python3 collect/timelapse_detect.py --interval 600 --duration 6
+
+# YOLO検出を追加（起動時にGUIでモデルを選択）
+python3 collect/timelapse_detect.py --detect
+
+# 深度カラーマップを相対値で表示（目視確認向け・学習用途には非推奨）
+python3 collect/timelapse_detect.py --relative-depth
+```
+
+各セッションは `data/timelapse_data/YYYY-MM-DD_HHMMSS/` に保存されます．
+
+```
+YYYY-MM-DD_HHMMSS/
+├── color/          NNNN_HHMMSS_color.jpg          # カラー画像
+├── depth/          NNNN_HHMMSS_depth.png           # 16bit 生深度
+│                   NNNN_HHMMSS_depth_colormap.jpg  # 深度可視化
+├── ir_left/        NNNN_HHMMSS_ir_left.jpg         # IR 左
+├── ir_right/       NNNN_HHMMSS_ir_right.jpg        # IR 右
+├── annotated/      NNNN_HHMMSS_annotated.jpg       # BBOX付き（--detect 時のみ）
+└── detection_log.csv                               # 検出結果ログ（--detect 時のみ）
+```
+
+撮影後に認識率の時系列グラフを生成できます．
+
+```bash
+# 最新セッションを自動選択
+python3 process/timelapse_analysis.py
+
+# セッション指定
+python3 process/timelapse_analysis.py data/timelapse_data/2026-06-23_080000
+```
+
+出力: `<session_dir>/analysis.png`（検出数・平均信頼度の時系列グラフ）
 
 ### 動画録画
 
