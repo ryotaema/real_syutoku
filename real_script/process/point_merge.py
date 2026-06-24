@@ -58,10 +58,29 @@ def icp_register(o3d, source, target, threshold, init=None):
 
 
 def find_latest_session(output_dir):
-    """output_dir 以下の session_* ディレクトリのうち最新のものを返す"""
+    """output_dir 以下の pc* ディレクトリのうち最新のものを返す"""
     base = Path(output_dir).expanduser()
-    sessions = sorted(base.glob('*/session_*'))
+    sessions = sorted(base.glob('*/pc*'))
     return sessions[-1] if sessions else None
+
+
+def _resolve_session_dir(given: str) -> Path:
+    """引数のパスを解決する。
+    相対パスは cwd → プロジェクトルート（real_script/ の親）の順に試みる。
+    """
+    p = Path(given)
+    if p.is_absolute():
+        return p
+    # cwd 基準
+    resolved = p.resolve()
+    if resolved.exists():
+        return resolved
+    # real_syutoku/ 基準（real_script/ の親）
+    project_root = Path(__file__).parent.parent.parent
+    alt = (project_root / given).resolve()
+    if alt.exists():
+        return alt
+    return resolved  # 存在しなくてもそのまま返す（呼び出し側でエラー表示）
 
 
 def main():
@@ -100,7 +119,7 @@ def main():
             sys.exit(1)
         print(f"最新セッションを使用: {session_dir}")
     else:
-        session_dir = Path(args.session_dir).resolve()
+        session_dir = _resolve_session_dir(args.session_dir)
         if not session_dir.exists():
             print(f"ディレクトリが見つかりません: {session_dir}")
             sys.exit(1)

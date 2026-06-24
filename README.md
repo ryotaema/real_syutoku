@@ -221,6 +221,9 @@ python3 detect/vino_yolo_detection_D435.py
 点群セッションは `data/pointcloud/YYYY_MMDD/pcN_YYYY-MM-DD_HHMMSS_CAMERA/` に保存されます．
 
 ```bash
+# 最新セッションを自動選択
+python3 process/point_merge.py
+
 # カメラ固定・物体静止（全フレーム→frame0に位置合わせ）
 python3 process/point_merge.py data/pointcloud/2026_0606/pc1_2026-06-06_120000_D435
 
@@ -230,6 +233,8 @@ python3 process/point_merge.py data/pointcloud/2026_0606/pc1_2026-06-06_120000_D
 # パラメータ上書き
 python3 process/point_merge.py <session_dir> --voxel-size 0.003 --icp-threshold 0.01
 ```
+
+パスは `real_script/` からの相対パス（`data/pointcloud/...`）と絶対パスの両方が使えます．
 
 出力: `<session_dir>/merged_pointcloud.ply` と変換行列 `icp_result.json`
 
