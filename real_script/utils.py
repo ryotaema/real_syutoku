@@ -4,6 +4,46 @@ from pathlib import Path
 
 _CFG_PATH = Path(__file__).parent / "config.yaml"
 
+# 対応モデル名のキーワード（小文字で比較）
+_CAMERA_MODELS = {
+    'd435': 'D435',
+    'd405': 'D405',
+}
+
+
+def detect_camera():
+    """接続されている最初のRealSenseカメラを検出して返す。
+
+    Returns:
+        dict: {'name': str, 'model': str, 'serial': str}
+              model は 'D435' / 'D405' / 'unknown' のいずれか
+    Raises:
+        RuntimeError: デバイスが見つからない場合
+    """
+    import pyrealsense2 as rs
+    ctx = rs.context()
+    devices = ctx.query_devices()
+    if len(devices) == 0:
+        raise RuntimeError("RealSenseデバイスが接続されていません")
+
+    dev = devices[0]
+    name   = dev.get_info(rs.camera_info.name)
+    serial = dev.get_info(rs.camera_info.serial_number)
+
+    model = 'unknown'
+    name_lower = name.lower()
+    for key, label in _CAMERA_MODELS.items():
+        if key in name_lower:
+            model = label
+            break
+
+    return {'name': name, 'model': model, 'serial': serial}
+
+
+def get_depth_alpha(cfg, model):
+    """カメラモデルに対応する depth colormap の alpha 値を返す。"""
+    return cfg['camera']['depth_alpha'].get(model, cfg['camera']['depth_alpha']['default'])
+
 
 def load_config():
     with open(_CFG_PATH) as f:

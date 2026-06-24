@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from ultralytics import YOLO
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args
+from utils import load_config, build_parser, apply_args, detect_camera
 
 _args = build_parser(include_model=True).parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -38,11 +38,20 @@ os.makedirs(save_dir, exist_ok=True)
 bag_path = os.path.join(save_dir, f'stream_{timestamp}.bag')
 mp4_path = os.path.join(save_dir, f'detected_{timestamp}.mp4')
 
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+_has_ir = (_cam['model'] != 'D405')
+
 config = rs.config()
-config.enable_stream(rs.stream.color,      W, H, rs.format.bgr8, FPS)
-config.enable_stream(rs.stream.depth,      W, H, rs.format.z16,  FPS)
-config.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8,  FPS)
-config.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8,  FPS)
+config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
+config.enable_stream(rs.stream.depth, W, H, rs.format.z16,  FPS)
+if _has_ir:
+    config.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8, FPS)
+    config.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8, FPS)
 config.enable_record_to_file(bag_path)
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')

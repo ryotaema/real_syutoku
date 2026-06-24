@@ -8,7 +8,7 @@ import gc
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args
+from utils import load_config, build_parser, apply_args, detect_camera
 
 # --- 設定読み込み ---
 _parser = build_parser()
@@ -53,6 +53,13 @@ else:
 print()
 
 # --- RealSense セットアップ（color + depth のみ） ---
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+
 pipeline  = rs.pipeline()
 rs_config = rs.config()
 rs_config.enable_stream(rs.stream.color, W, H, rs.format.rgb8, FPS)

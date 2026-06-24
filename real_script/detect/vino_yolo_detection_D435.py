@@ -8,7 +8,7 @@ import gc
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args
+from utils import load_config, build_parser, apply_args, detect_camera
 
 _args = build_parser(include_model=True, include_conf=True).parse_args()
 _cfg  = apply_args(load_config(), _args, model_key='openvino_path')
@@ -51,6 +51,13 @@ def get_realsense_color_frame(pipeline, align):
     return np.asanyarray(color_frame.get_data())
 
 # RealSenseの初期化
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+
 pipeline = rs.pipeline()
 config = rs.config()
 config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)

@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args
+from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha
 
 WARMUP_SECS = 2.0  # AE安定待ち（フレーム数でなく秒数で管理）
 
@@ -37,6 +37,16 @@ if INTERVAL <= 0:
     sys.exit(1)
 TOTAL_SEC   = int(_args.duration * 3600)
 TOTAL_SHOTS = TOTAL_SEC // INTERVAL
+
+# ── カメラ検出 ───────────────────────────────────────────────────────────────
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    sys.exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+_has_ir      = (_cam['model'] != 'D405')
+_depth_alpha = get_depth_alpha(_cfg, _cam['model'])
 
 # ── --detect: GUIでモデルを選択してYOLOを読み込む ─────────────────────────────
 model         = None
@@ -77,10 +87,12 @@ session_ts   = datetime.now().strftime('%Y-%m-%d_%H%M%S')
 session_dir  = _images_base.parent / 'timelapse_data' / session_ts
 color_dir    = session_dir / 'color'
 depth_dir    = session_dir / 'depth'
-ir_left_dir  = session_dir / 'ir_left'
-ir_right_dir = session_dir / 'ir_right'
 
-dirs = [color_dir, depth_dir, ir_left_dir, ir_right_dir]
+dirs = [color_dir, depth_dir]
+if _has_ir:
+    ir_left_dir  = session_dir / 'ir_left'
+    ir_right_dir = session_dir / 'ir_right'
+    dirs += [ir_left_dir, ir_right_dir]
 
 if _args.detect:
     annotated_dir = session_dir / 'annotated'
@@ -91,20 +103,13 @@ for d in dirs:
     d.mkdir(parents=True, exist_ok=True)
 
 # ── RealSense 初期化 ─────────────────────────────────────────────────────────
-ctx = rs.context()
-if len(ctx.devices) == 0:
-    print("No Intel Device connected")
-    sys.exit(1)
-for dev in ctx.devices:
-    print('Found device:', dev.get_info(rs.camera_info.name),
-          dev.get_info(rs.camera_info.serial_number))
-
 pipeline = rs.pipeline()
 rs_cfg   = rs.config()
-rs_cfg.enable_stream(rs.stream.color,      W, H, rs.format.bgr8, FPS)
-rs_cfg.enable_stream(rs.stream.depth,      W, H, rs.format.z16,  FPS)
-rs_cfg.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8,  FPS)
-rs_cfg.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8,  FPS)
+rs_cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
+rs_cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16,  FPS)
+if _has_ir:
+    rs_cfg.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8, FPS)
+    rs_cfg.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8, FPS)
 pipeline.start(rs_cfg)
 
 print(f"オートエクスポージャ安定待ち（{WARMUP_SECS}秒）...")
@@ -130,12 +135,9 @@ print(f"YOLO検出  : {'有効（信頼度閾値 ' + str(CONF) + '）' if _args.
 def _capture(shot_idx: int, start: float) -> bool:
     frames  = pipeline.wait_for_frames()
     aligned = align.process(frames)
-    cf  = aligned.get_color_frame()
-    df  = aligned.get_depth_frame()
-    # IRはalign前のフレームから取得（元解像度・純粋なIR画像）
-    ir1 = frames.get_infrared_frame(1)
-    ir2 = frames.get_infrared_frame(2)
-    if not cf or not df or not ir1 or not ir2:
+    cf = aligned.get_color_frame()
+    df = aligned.get_depth_frame()
+    if not cf or not df:
         print(f"[警告] フレーム欠落（shot {shot_idx}）- スキップ")
         return False
 
@@ -152,20 +154,25 @@ def _capture(shot_idx: int, start: float) -> bool:
         ).astype(np.uint8)
         depth_vis = cv2.applyColorMap(normed, cv2.COLORMAP_JET)
     else:
-        # 絶対深度: alpha=0.05 → ~5100mm で飽和（学習用途のデフォルト）
+        # 絶対深度: カメラモデルに応じた alpha で飽和距離を調整
         depth_vis = cv2.applyColorMap(
-            cv2.convertScaleAbs(depth_img, alpha=0.05), cv2.COLORMAP_JET)
-    ir_img1   = np.asanyarray(ir1.get_data())
-    ir_img2   = np.asanyarray(ir2.get_data())
+            cv2.convertScaleAbs(depth_img, alpha=_depth_alpha), cv2.COLORMAP_JET)
 
     stem = f'{shot_idx:04d}_{datetime.now().strftime("%H%M%S")}'
     writes = {
-        color_dir    / f'{stem}_color.jpg':          color_img,
-        depth_dir    / f'{stem}_depth.png':          depth_img,
-        depth_dir    / f'{stem}_depth_colormap.jpg': depth_vis,
-        ir_left_dir  / f'{stem}_ir_left.jpg':        ir_img1,
-        ir_right_dir / f'{stem}_ir_right.jpg':       ir_img2,
+        color_dir / f'{stem}_color.jpg':          color_img,
+        depth_dir / f'{stem}_depth.png':          depth_img,
+        depth_dir / f'{stem}_depth_colormap.jpg': depth_vis,
     }
+
+    if _has_ir:
+        # IRはalign前のフレームから取得（元解像度・純粋なIR画像）
+        ir1 = frames.get_infrared_frame(1)
+        ir2 = frames.get_infrared_frame(2)
+        if ir1 and ir2:
+            writes[ir_left_dir  / f'{stem}_ir_left.jpg']  = np.asanyarray(ir1.get_data())
+            writes[ir_right_dir / f'{stem}_ir_right.jpg'] = np.asanyarray(ir2.get_data())
+
     write_ok = True
     for path, img in writes.items():
         if not cv2.imwrite(str(path), img):

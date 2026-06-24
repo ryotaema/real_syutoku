@@ -6,7 +6,7 @@ import gc
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args
+from utils import load_config, build_parser, apply_args, detect_camera
 
 _args = build_parser(include_model=True).parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -18,17 +18,12 @@ FPS = _cfg['camera']['fps']
 _root = Path(__file__).parent.parent
 YOLO_MODEL_PATH = str(_root / _cfg['model']['yolo_path'])
 
-ctx = rs.context()
-serials = []
-devices = ctx.query_devices()
-# dev.hardware_reset() は複数カメラ環境で他デバイスに影響するため通常は不要
-
-if len(ctx.devices) > 0:
-    for dev in ctx.devices:
-        print('Found device:', dev.get_info(rs.camera_info.name), dev.get_info(rs.camera_info.serial_number))
-        serials.append(dev.get_info(rs.camera_info.serial_number))
-else:
-    print("No Intel Device connected")
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
 pipeline = rs.pipeline()
 config = rs.config()

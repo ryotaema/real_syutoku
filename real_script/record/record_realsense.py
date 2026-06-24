@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args
+from utils import load_config, build_parser, apply_args, detect_camera
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -32,6 +32,13 @@ video_writer = cv2.VideoWriter(mp4_path, fourcc, FPS, (W, H))
 if not video_writer.isOpened():
     print(f"Failed to open VideoWriter for {mp4_path}")
     exit(1)
+
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
 pipeline = rs.pipeline()
 align_to = rs.stream.color

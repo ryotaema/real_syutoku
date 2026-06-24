@@ -2,6 +2,10 @@ camera:
   width: 640
   height: 480
   fps: 30  # D435で4ストリーム(color+depth+IR×2)同時使用時は15を推奨
+  depth_alpha:
+    D435: 0.4   # ~637mm で飽和（近距離収集向け）
+    D405: 0.5   # ~510mm で飽和（D405 最大距離 ~500mm に合わせる）
+    default: 0.4
 
 output:
   images_dir: ~/annot_labelimg/real_syutoku/data/images
