@@ -35,11 +35,26 @@ min_d = _args.min_depth if _args.min_depth is not None else _cfg['pointcloud']['
 max_d = _args.max_depth if _args.max_depth is not None else _cfg['pointcloud']['max_depth']
 use_filter = not _args.no_filter
 
+# --- カメラ検出 ---
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+
 # --- 出力ディレクトリ ---
-base_dir    = os.path.expanduser(_cfg['pointcloud']['output_dir'])
-date_str    = datetime.now().strftime('%Y-%m-%d')
-session_str = datetime.now().strftime('session_%H%M%S')
-save_dir    = os.path.join(base_dir, date_str, session_str)
+_pc_base = Path(os.path.expanduser(_cfg['pointcloud']['output_dir']))
+_now     = datetime.now()
+date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
+date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
+time_str = _now.strftime('%H%M%S')    # 例: 101741
+_date_dir = _pc_base / date_key
+_date_dir.mkdir(parents=True, exist_ok=True)
+
+existing_sessions = [d for d in _date_dir.iterdir() if d.is_dir() and d.name.startswith('pc')]
+N = len(existing_sessions) + 1
+save_dir = str(_date_dir / f"pc{N}_{date_str}_{time_str}_{_cam['model']}")
 os.makedirs(save_dir, exist_ok=True)
 
 print(f"保存先: {save_dir}")
@@ -53,12 +68,6 @@ else:
 print()
 
 # --- RealSense セットアップ（color + depth のみ） ---
-try:
-    _cam = detect_camera()
-except RuntimeError as e:
-    print(f"エラー: {e}")
-    exit(1)
-print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
 pipeline  = rs.pipeline()
 rs_config = rs.config()
@@ -152,8 +161,6 @@ try:
                 break
             elif key == ord('q'):
                 print("中止しました。")
-                pipeline.stop()
-                gc.collect()
                 sys.exit(0)
 
         # 自動取得ループ

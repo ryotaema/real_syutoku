@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha
+from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha, make_depth_colormap
 
 WARMUP_SECS = 2.0  # AE安定待ち（フレーム数でなく秒数で管理）
 
@@ -82,9 +82,18 @@ if _args.detect:
         print(f"モデル読み込み: {_model_path}")
 
 # ── 出力先 ──────────────────────────────────────────────────────────────────
-_images_base = Path(os.path.expanduser(_cfg['output']['images_dir']))
-session_ts   = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-session_dir  = _images_base.parent / 'timelapse_data' / session_ts
+_images_base    = Path(os.path.expanduser(_cfg['output']['images_dir']))
+_timelapse_base = _images_base.parent / 'timelapse_data'
+_now     = datetime.now()
+date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
+date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
+time_str = _now.strftime('%H%M%S')    # 例: 080000
+_date_dir = _timelapse_base / date_key
+_date_dir.mkdir(parents=True, exist_ok=True)
+
+existing_sessions = [d for d in _date_dir.iterdir() if d.is_dir() and d.name.startswith('timelapse')]
+N = len(existing_sessions) + 1
+session_dir  = _date_dir / f"timelapse{N}_{date_str}_{time_str}_{_cam['model']}"
 color_dir    = session_dir / 'color'
 depth_dir    = session_dir / 'depth'
 
@@ -143,20 +152,8 @@ def _capture(shot_idx: int, start: float) -> bool:
 
     color_img = np.asanyarray(cf.get_data())
     depth_img = np.asanyarray(df.get_data())
-    if _args.relative_depth:
-        # 相対深度: 深度なし画素（値=0）を除外して正規化（目視確認向け）
-        valid = depth_img[depth_img > 0]
-        valid_min = int(valid.min()) if valid.size > 0 else 0
-        normed = np.clip(
-            (depth_img.astype(np.float32) - valid_min)
-            / (depth_img.max() - valid_min + 1e-6) * 255,
-            0, 255
-        ).astype(np.uint8)
-        depth_vis = cv2.applyColorMap(normed, cv2.COLORMAP_JET)
-    else:
-        # 絶対深度: カメラモデルに応じた alpha で飽和距離を調整
-        depth_vis = cv2.applyColorMap(
-            cv2.convertScaleAbs(depth_img, alpha=_depth_alpha), cv2.COLORMAP_JET)
+    # --relative-depth または D405（_depth_alpha=None）は相対正規化
+    depth_vis = make_depth_colormap(depth_img, None if _args.relative_depth else _depth_alpha)
 
     stem = f'{shot_idx:04d}_{datetime.now().strftime("%H%M%S")}'
     writes = {

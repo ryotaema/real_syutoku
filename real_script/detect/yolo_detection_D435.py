@@ -59,24 +59,13 @@ if __name__ == '__main__':
             frames = pipeline.wait_for_frames()
             aligned_frames = align.process(frames)
             color_frame = aligned_frames.get_color_frame()
+            if not color_frame:
+                continue
 
             color_image = np.asanyarray(color_frame.get_data())
 
             results = model(color_image, show=False, save=False)
             anotated_image = results[0].plot()
-
-            result_object = results[0]
-            bounding_boxes = result_object.boxes.xyxy
-            class_ids = result_object.boxes.cls
-            class_names_dict = result_object.names
-
-            for box, class_id in zip(bounding_boxes, class_ids):
-                class_names_dict[int(class_id)]
-
-            bbox = np.array([])
-            for box in bounding_boxes:
-                bbox = np.append(bbox, (float(box[0]), float(box[1])))
-            bbox = bbox.reshape(len(bounding_boxes), 2)
 
             cv2.imshow('RealSense', anotated_image)
 

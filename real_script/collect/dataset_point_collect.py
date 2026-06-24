@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha
+from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha, make_depth_colormap
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -27,20 +27,18 @@ _has_ir      = (_cam['model'] != 'D405')
 _depth_alpha = get_depth_alpha(_cfg, _cam['model'])
 
 i = 0
-j = 1
 
 save_dir = os.path.expanduser(_cfg['output']['images_dir'])
-date_str = datetime.now().strftime('%Y-%m-%d')
-save_dir_dated = os.path.join(save_dir, date_str)
+_now     = datetime.now()
+date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
+date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
+time_str = _now.strftime('%H%M%S')    # 例: 101741
+save_dir_dated = os.path.join(save_dir, date_key)
 os.makedirs(save_dir_dated, exist_ok=True)
 
-while True:
-    base_path = os.path.join(save_dir_dated, f"image_{j}")
-    try:
-        os.makedirs(base_path)
-        break
-    except FileExistsError:
-        j += 1
+existing_sessions = [d for d in os.scandir(save_dir_dated) if d.is_dir() and d.name.startswith('image')]
+N = len(existing_sessions) + 1
+base_path = os.path.join(save_dir_dated, f"image{N}_{date_str}_{time_str}_{_cam['model']}")
 
 paths = {
     'color': os.path.join(base_path, 'color'),
@@ -82,7 +80,7 @@ try:
 
         color = np.asanyarray(c_frame.get_data())
         depth = np.asanyarray(d_frame.get_data())
-        dm    = cv2.applyColorMap(cv2.convertScaleAbs(depth, alpha=_depth_alpha), cv2.COLORMAP_JET)
+        dm    = make_depth_colormap(depth, _depth_alpha)
 
         if _has_ir:
             ir1 = aligned.get_infrared_frame(1)

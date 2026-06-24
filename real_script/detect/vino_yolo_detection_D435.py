@@ -22,7 +22,7 @@ _model_xml = str(_root / _cfg['model']['openvino_path'])
 _conf_thresh = _cfg['model']['confidence_threshold']
 
 
-def decode_yolo_output(output, image_shape, threshold=0.3):
+def decode_yolo_output(output, threshold=0.3):
     boxes = []
     if output.ndim == 3:
         output = output[0]
@@ -94,7 +94,7 @@ try:
         prev = infer_requests[(req_idx - 1) % num_requests]
         if prev.wait() == 0:
             out = prev.get_output_tensor(0).data.squeeze()
-            boxes = decode_yolo_output(out, color.shape, threshold=_conf_thresh)
+            boxes = decode_yolo_output(out, threshold=_conf_thresh)
             draw_boxes(color, boxes)
 
         cv2.imshow('OpenVINO GPU', color)

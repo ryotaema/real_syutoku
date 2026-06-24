@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha
+from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha, make_depth_colormap
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -28,33 +28,27 @@ _depth_alpha = get_depth_alpha(_cfg, _cam['model'])
 
 # --- 2. 保存ディレクトリの設定 ---
 i = 0
-j = 1
 
 save_dir_base = os.path.expanduser(_cfg['output']['images_dir'])
-date_str = datetime.now().strftime('%Y-%m-%d')
-save_dir_dated = os.path.join(save_dir_base, date_str)
+_now     = datetime.now()
+date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
+date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
+time_str = _now.strftime('%H%M%S')    # 例: 101741
+save_dir_dated = os.path.join(save_dir_base, date_key)
 os.makedirs(save_dir_dated, exist_ok=True)
 
-file_ok = True
-base_path = ""
-while file_ok:
-    base_path = os.path.join(save_dir_dated, f"image_{j}")
-    try:
-        os.makedirs(base_path)
-        file_ok = False
-    except FileExistsError:
-        print(f"フォルダが存在しています: {base_path}")
-        file_ok = True
-    j += 1
+existing_sessions = [d for d in os.scandir(save_dir_dated) if d.is_dir() and d.name.startswith('image')]
+N = len(existing_sessions) + 1
+base_path = os.path.join(save_dir_dated, f"image{N}_{date_str}_{time_str}_{_cam['model']}")
 
-path_color = os.path.join(base_path, "color/")
-path_depth = os.path.join(base_path, "depth/")
+path_color = os.path.join(base_path, "color")
+path_depth = os.path.join(base_path, "depth")
 paths_to_make = [path_color, path_depth]
 if _has_ir:
-    path_ir_left        = os.path.join(base_path, "ir_left/")
-    path_ir_right       = os.path.join(base_path, "ir_right/")
-    path_ir_left_color  = os.path.join(base_path, "ir_left_color/")
-    path_ir_right_color = os.path.join(base_path, "ir_right_color/")
+    path_ir_left        = os.path.join(base_path, "ir_left")
+    path_ir_right       = os.path.join(base_path, "ir_right")
+    path_ir_left_color  = os.path.join(base_path, "ir_left_color")
+    path_ir_right_color = os.path.join(base_path, "ir_right_color")
     paths_to_make += [path_ir_left, path_ir_right, path_ir_left_color, path_ir_right_color]
 
 print(f"画像を {base_path} に保存します")
@@ -74,7 +68,7 @@ try:
         config.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8, FPS)
 except RuntimeError as e:
     print(f"ストリームの設定に失敗しました: {e}")
-    exit(0)
+    exit(1)
 
 pipeline.start(config)
 
@@ -89,7 +83,7 @@ def _get_frames(aligned_frames):
         return None
     color_image    = np.asanyarray(color_frame.get_data())
     depth_image    = np.asanyarray(depth_frame.get_data())
-    depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=_depth_alpha), cv2.COLORMAP_JET)
+    depth_colormap = make_depth_colormap(depth_image, _depth_alpha)
     ir_image1 = ir_image2 = ir_colormap1 = ir_colormap2 = None
     if _has_ir:
         ir_frame1 = aligned_frames.get_infrared_frame(1)

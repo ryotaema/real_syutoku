@@ -25,8 +25,9 @@ except ImportError:
 
 
 def _find_latest_session() -> Path:
-    base = Path.home() / 'annot_labelimg' / 'real_syutoku' / 'data' / 'timelapse'
-    sessions = sorted(base.glob('*/detection_log.csv'))
+    base = Path.home() / 'annot_labelimg' / 'real_syutoku' / 'data' / 'timelapse_data'
+    # 新構造: timelapse_data/YYYY_MMDD/timelapsN_.../detection_log.csv
+    sessions = sorted(base.glob('*/*/detection_log.csv'))
     if not sessions:
         print(f"セッションが見つかりません: {base}")
         sys.exit(1)

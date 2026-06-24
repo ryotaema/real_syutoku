@@ -74,7 +74,7 @@ try:
 except KeyboardInterrupt:
     print("\nキャンセルされました。")
     video_writer.release()
-    exit()
+    sys.exit(0)
 
 profile = pipeline.start(config)
 print("録画中... 'q' を押すと終了します")

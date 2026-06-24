@@ -41,8 +41,30 @@ def detect_camera():
 
 
 def get_depth_alpha(cfg, model):
-    """カメラモデルに対応する depth colormap の alpha 値を返す。"""
+    """カメラモデルに対応する depth colormap の alpha 値を返す。
+    None の場合はフレーム内相対正規化を使用する（make_depth_colormap 参照）。
+    """
     return cfg['camera']['depth_alpha'].get(model, cfg['camera']['depth_alpha']['default'])
+
+
+def make_depth_colormap(depth_image, alpha):
+    """depth_image (uint16 numpy array) → BGR uint8 の深度カラーマップを返す。
+
+    alpha=None  : フレーム内相対正規化（D405 向け。距離範囲に関わらず全域を使う）
+    alpha=float : 固定倍率（D435 向け。絶対距離が色に対応する）
+    """
+    import cv2
+    import numpy as np
+    if alpha is None:
+        valid = depth_image[depth_image > 0]
+        if valid.size == 0:
+            return np.zeros((*depth_image.shape, 3), dtype=np.uint8)
+        normed = np.clip(
+            (depth_image.astype(np.float32) - valid.min()) / (valid.max() - valid.min() + 1e-6) * 255,
+            0, 255,
+        ).astype(np.uint8)
+        return cv2.applyColorMap(normed, cv2.COLORMAP_JET)
+    return cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=alpha), cv2.COLORMAP_JET)
 
 
 def load_config():

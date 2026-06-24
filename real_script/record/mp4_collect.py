@@ -4,7 +4,6 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
-import gc
 import sys
 from pathlib import Path
 from datetime import datetime
