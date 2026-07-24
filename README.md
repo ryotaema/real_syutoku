@@ -14,11 +14,14 @@ real_syutoku/
 │   ├── detect/              # リアルタイム推論
 │   ├── process/             # 後処理（点群マージ・タイムラプス集計）
 │   └── click_script/        # アノテーションツール
+├── tools/
+│   ├── rename_legacy.py     # 旧命名データを新命名規則へ変換（CLI）
+│   └── rename_legacy_gui.py # 同上（GUI）
 └── data/
-    ├── images/              # 収集画像（YYYY_MMDD/imageN_YYYY-MM-DD_HHMMSS_CAMERA/）
+    ├── images/              # 収集画像（YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/）
     ├── mp4/                 # 録画ファイル
-    ├── pointcloud/          # 点群データ（YYYY_MMDD/pcN_YYYY-MM-DD_HHMMSS_CAMERA/）
-    └── timelapse_data/      # 定点タイムラプス（YYYY_MMDD/timelapsN_YYYY-MM-DD_HHMMSS_CAMERA/）
+    ├── pointcloud/          # 点群データ（YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/）
+    └── timelapse_data/      # 定点タイムラプス（YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/）
 ```
 
 ## セットアップ
@@ -77,6 +80,105 @@ model:
   confidence_threshold: 0.3
 ```
 
+## データ命名規則
+
+すべての収集データは，ファイル名だけで「どのカメラの・いつの・何枚目の・何の画像か」が
+分かるように統一されています．学習用に1つのフォルダへ集約しても，アノテーションツールに
+まとめて読み込ませても，どのセッションのデータか判別できなくなることがありません．
+
+```
+{cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.{ext}
+
+d435_260707_101741_00042_c.jpg
+ │        │      │      │     └─ モダリティコード
+ │        │      │      └─────── セッション内のショット連番（撮影時刻ではない）
+ │        │      └────────────── セッション開始時刻
+ │        └───────────────────── 取得日
+ └────────────────────────────── カメラコード
+```
+
+| 要素 | 説明 |
+|------|------|
+| `cam` | `d435` / `d405`（自動判別）．nyx660_syutoku 側は `nyx` を使うため，リポジトリを跨いでも衝突しません |
+| `YYMMDD` | 取得日 |
+| `HHMMSS` | セッション開始時刻．1プロセス＝1セッションで固定です |
+| `NNNNN` | セッション内のショット連番．**同一ショットの color/depth/ir は同じ番号を共有します** |
+| `mod` | モダリティコード（下表） |
+
+**モダリティコード**
+
+| コード | 内容 | コード | 内容 |
+|--------|------|--------|------|
+| `c` | color | `i1c` | IR 左カラーマップ |
+| `d` | depth（16bit raw PNG） | `i2c` | IR 右カラーマップ |
+| `dc` | depth colormap | `pc` | 点群（.ply） |
+| `i1` | IR 左 | `pt` | クリック座標（.txt） |
+| `i2` | IR 右 | `det` | YOLO 描画済み |
+
+連番はショット単位で共有されるため，末尾のモダリティコードを差し替えるだけで対応する
+ファイルを引けます（`..._00042_c.jpg` ↔ `..._00042_dc.jpg`）．YOLO のラベル `.txt` や
+labelImg の `.xml` も stem が一致するので自動的に紐づきます．
+
+撮影条件など，ファイル名に載せない情報は各セッションの `metadata.json` に記録されます．
+
+### セッションディレクトリとタグ
+
+```
+<出力先>/<YYMMDD>/<prefix>[_<tag>]/<モダリティ>/<ファイル>
+```
+
+`--tag` を付けると，セッションディレクトリ名にだけ任意の名前が付きます
+（ファイル名の桁は増えません）．
+
+```bash
+python3 collect/dataset_collect_photo.py --tag greenhouse
+# → images/260707/d435_260707_101741_greenhouse/color/d435_260707_101741_00001_c.jpg
+```
+
+### 旧データの変換
+
+2026年7月より前に取得した旧命名（`imageN_YYYY-MM-DD_HHMMSS_D435/` など）のデータは，
+そのまま置いておけます．新命名に揃えたい場合は変換ツールを使ってください．
+
+旧ファイル名のモダリティ接尾辞（`_color` / `_depth_colormap` など）を手がかりに，
+同一ショットのファイルへ同じ連番を振り直します．`labels/*.txt` や `*.xml` も追従します．
+既定はコピーなので原データは残ります．
+
+#### GUI（推奨）
+
+フォルダを選んで，変換後のファイル名を一覧で確認してから実行できます．
+データが複数の場所に散らばっている場合も，変換元フォルダをいくつでも登録できます．
+
+```bash
+python3 tools/rename_legacy_gui.py
+```
+
+1. **変換元フォルダ** — 「フォルダを追加...」で登録（複数可）．
+   データルート（`data/images`）を指定すれば配下のセッションをまとめて拾います．
+2. **設定** — カメラコードは通常「自動判別」のままで構いません．フォルダ名から
+   判別できないデータ（`click_test_data` など）はスキップ理由が表示されるので，
+   そのときだけ `d435` / `d405` を指定します．タグ・出力先・コピー/移動もここで指定．
+3. **プレビューを作成** — セッションごとに「変換前 → 変換後」が並びます．
+   行を開くと個々のファイル名を確認できます．
+4. **変換を実行** — プレビューを作るまで実行ボタンは押せません．
+
+`tkinter` が必要です（`sudo apt install python3-tk`）．
+
+#### CLI
+
+```bash
+# 何が起きるか確認（dry-run。既定ではファイルを書き換えません）
+python3 tools/rename_legacy.py data/images
+
+# 実行（コピーで出力するため原データは残ります）
+python3 tools/rename_legacy.py data/images --apply
+
+# ディレクトリ名からカメラ・日時が分からないデータ
+python3 tools/rename_legacy.py data/click_test_data/250911_testdata_click --cam d435 --apply
+```
+
+`--move` を付けると移動になります（原データが残らないので注意）．
+
 ## 使い方
 
 すべてのスクリプトは `real_script/` を起点に実行してください．
@@ -90,6 +192,7 @@ model:
 | `--fps N` | collect / record / detect | `--fps 15` |
 | `--width N` | collect / record / detect | `--width 1280` |
 | `--height N` | collect / record / detect | `--height 720` |
+| `--tag NAME` | collect / click_script | `--tag greenhouse`（セッションディレクトリ名にのみ付与） |
 | `--model PATH` | record_with_yolo / detect | `--model /path/to/model.pt` |
 | `--conf F` | vino_yolo_detection / timelapse_detect（--detect 時） | `--conf 0.5` |
 | `--interval N` | timelapse_detect | `--interval 300` |
@@ -128,19 +231,22 @@ python3 collect/dataset_collect_photo.py
 
 #### 収集画像の保存先
 
-セッション名には「連番・日付・開始時刻・カメラモデル」が含まれます．同じ日に複数回実行すると連番が増えます．
+セッションディレクトリ名は「カメラ・日付・開始時刻」で決まります（[データ命名規則](#データ命名規則)）．
 
 ```
-images_dir/YYYY_MMDD/imageN_YYYY-MM-DD_HHMMSS_CAMERA/
-├── color/          # カラー画像（D435/D405 共通）
-├── depth/          # 深度画像（D435/D405 共通）
-├── ir_left/        # IR 左（D435 のみ）
-├── ir_right/       # IR 右（D435 のみ）
-├── ir_left_color/  # IR 左カラーマップ（D435 のみ）
-└── ir_right_color/ # IR 右カラーマップ（D435 のみ）
+images_dir/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/
+├── color/          {prefix}_{NNNNN}_c.jpg     # カラー画像（D435/D405 共通）
+├── depth_colormap/ {prefix}_{NNNNN}_dc.jpg    # 深度カラーマップ（D435/D405 共通）
+├── ir_left/        {prefix}_{NNNNN}_i1.jpg    # IR 左（D435 のみ）
+├── ir_right/       {prefix}_{NNNNN}_i2.jpg    # IR 右（D435 のみ）
+├── ir_left_color/  {prefix}_{NNNNN}_i1c.jpg   # IR 左カラーマップ（D435 のみ）
+├── ir_right_color/ {prefix}_{NNNNN}_i2c.jpg   # IR 右カラーマップ（D435 のみ）
+└── metadata.json                              # カメラ設定・撮影枚数
 ```
 
-例: `images/2026_0624/image1_2026-06-24_101741_D435/`
+例: `images/260624/d435_260624_101741/color/d435_260624_101741_00001_c.jpg`
+
+`dataset_point_collect.py` はこれに加えて `pointcloud/{prefix}_{NNNNN}_pc.ply` を保存します．
 
 ### 定点タイムラプス撮影
 
@@ -160,20 +266,23 @@ python3 collect/timelapse_detect.py --detect
 python3 collect/timelapse_detect.py --relative-depth
 ```
 
-各セッションは `data/timelapse_data/YYYY_MMDD/timelapsN_YYYY-MM-DD_HHMMSS_CAMERA/` に保存されます．
+各セッションは `data/timelapse_data/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/` に保存されます．
 
 ```
-timelapse_data/YYYY_MMDD/timelapsN_YYYY-MM-DD_HHMMSS_CAMERA/
-├── color/          NNNN_HHMMSS_color.jpg          # カラー画像
-├── depth/          NNNN_HHMMSS_depth.png           # 16bit 生深度
-│                   NNNN_HHMMSS_depth_colormap.jpg  # 深度可視化
-├── ir_left/        NNNN_HHMMSS_ir_left.jpg         # IR 左（D435 のみ）
-├── ir_right/       NNNN_HHMMSS_ir_right.jpg        # IR 右（D435 のみ）
-├── annotated/      NNNN_HHMMSS_annotated.jpg       # BBOX付き（--detect 時のみ）
-└── detection_log.csv                               # 検出結果ログ（--detect 時のみ）
+timelapse_data/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/
+├── color/          {prefix}_{NNNNN}_c.jpg     # カラー画像
+├── depth/          {prefix}_{NNNNN}_d.png     # 16bit 生深度
+├── depth_colormap/ {prefix}_{NNNNN}_dc.jpg    # 深度可視化
+├── ir_left/        {prefix}_{NNNNN}_i1.jpg    # IR 左（D435 のみ）
+├── ir_right/       {prefix}_{NNNNN}_i2.jpg    # IR 右（D435 のみ）
+├── annotated/      {prefix}_{NNNNN}_det.jpg   # BBOX付き（--detect 時のみ）
+├── detection_log.csv                          # 検出結果ログ（--detect 時のみ）
+└── metadata.json                              # 撮影間隔・継続時間・カメラ設定
 ```
 
-例: `timelapse_data/2026_0624/timelapse1_2026-06-24_080000_D435/`
+例: `timelapse_data/260624/d435_260624_080000/color/d435_260624_080000_00001_c.jpg`
+
+連番は5桁なので，長時間のタイムラプス（10秒間隔×24時間＝8640枚）でも桁が溢れません．
 
 撮影後に認識率の時系列グラフを生成できます．
 
@@ -218,17 +327,18 @@ python3 detect/vino_yolo_detection_D435.py
 
 ### 点群合わせ込み・マージ
 
-点群セッションは `data/pointcloud/YYYY_MMDD/pcN_YYYY-MM-DD_HHMMSS_CAMERA/` に保存されます．
+点群セッションは `data/pointcloud/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/` に保存されます
+（color / depth / .ply をセッション直下にフラット配置）．
 
 ```bash
 # 最新セッションを自動選択
 python3 process/point_merge.py
 
 # カメラ固定・物体静止（全フレーム→frame0に位置合わせ）
-python3 process/point_merge.py data/pointcloud/2026_0606/pc1_2026-06-06_120000_D435
+python3 process/point_merge.py data/pointcloud/260606/d435_260606_120000
 
 # カメラ固定・物体回転（frame-to-frame逐次位置合わせ）
-python3 process/point_merge.py data/pointcloud/2026_0606/pc1_2026-06-06_120000_D435 --sequential
+python3 process/point_merge.py data/pointcloud/260606/d435_260606_120000 --sequential
 
 # パラメータ上書き
 python3 process/point_merge.py <session_dir> --voxel-size 0.003 --icp-threshold 0.01
@@ -236,7 +346,9 @@ python3 process/point_merge.py <session_dir> --voxel-size 0.003 --icp-threshold 
 
 パスは `real_script/` からの相対パス（`data/pointcloud/...`）と絶対パスの両方が使えます．
 
-出力: `<session_dir>/merged_pointcloud.ply` と変換行列 `icp_result.json`
+出力: `<session_dir>/{prefix}_merged_pc.ply` と変換行列 `merge_result.json`
+
+旧命名（`0000_pointcloud.ply`）のセッションもそのまま読めます．
 
 ### アノテーション
 

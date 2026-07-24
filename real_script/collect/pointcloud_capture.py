@@ -6,9 +6,8 @@ import sys
 import json
 import gc
 from pathlib import Path
-from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera
+from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code
 
 # --- 設定読み込み ---
 _parser = build_parser()
@@ -44,18 +43,10 @@ except RuntimeError as e:
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
 # --- 出力ディレクトリ ---
-_pc_base = Path(os.path.expanduser(_cfg['pointcloud']['output_dir']))
-_now     = datetime.now()
-date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
-date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
-time_str = _now.strftime('%H%M%S')    # 例: 101741
-_date_dir = _pc_base / date_key
-_date_dir.mkdir(parents=True, exist_ok=True)
-
-existing_sessions = [d for d in _date_dir.iterdir() if d.is_dir() and d.name.startswith('pc')]
-N = len(existing_sessions) + 1
-save_dir = str(_date_dir / f"pc{N}_{date_str}_{time_str}_{_cam['model']}")
-os.makedirs(save_dir, exist_ok=True)
+# color/depth/ply は点群処理でまとめて扱うためセッション直下にフラットに置く
+# （point_merge.py が session_dir 直下を走査する）
+session  = Session(_cfg['pointcloud']['output_dir'], cam_code(_cam['model']), tag=_args.tag)
+save_dir = str(session.dir)
 
 print(f"保存先: {save_dir}")
 mode_label = f"auto ({capture_frames} frames)" if mode == 'auto' else "manual"
@@ -101,42 +92,34 @@ intrinsics_data = {
 with open(os.path.join(save_dir, 'intrinsics.json'), 'w') as f:
     json.dump(intrinsics_data, f, indent=2)
 
-# --- セッションメタデータ初期化 ---
-metadata = {
-    'mode':           mode,
-    'capture_frames': capture_frames if mode == 'auto' else None,
-    'actual_frames':  0,
-    'width':          W,
-    'height':         H,
-    'fps':            FPS,
-    'depth_filter': {
-        'enabled':   use_filter,
-        'min_depth': min_d if use_filter else None,
-        'max_depth': max_d if use_filter else None,
-    },
-    'timestamp': datetime.now().isoformat(),
-}
-
-
 def save_frame(idx, c_frame, d_frame):
-    prefix = os.path.join(save_dir, f"{idx:04d}")
-
     color     = np.asanyarray(c_frame.get_data())   # RGB
     depth_raw = np.asanyarray(d_frame.get_data())   # uint16 生深度
-    cv2.imwrite(prefix + '_color.jpg',  cv2.cvtColor(color, cv2.COLOR_RGB2BGR))
-    cv2.imwrite(prefix + '_depth.png',  depth_raw)  # フィルタなし・16-bit PNG
+    cv2.imwrite(session.path(idx, 'color', sub=False),
+                cv2.cvtColor(color, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(session.path(idx, 'depth', ext='png', sub=False),
+                depth_raw)                          # フィルタなし・16-bit PNG
 
     # PLY はフィルタ適用後の深度で生成（--no-filter 時は生のまま）
     depth_for_pc = depth_filter.process(d_frame) if depth_filter else d_frame
     pc_obj.map_to(c_frame)
     pts = pc_obj.calculate(depth_for_pc)
-    pts.export_to_ply(prefix + '_pointcloud.ply', c_frame)
+    pts.export_to_ply(session.path(idx, 'pointcloud', ext='ply', sub=False), c_frame)
 
 
 def write_metadata(actual_frames):
-    metadata['actual_frames'] = actual_frames
-    with open(os.path.join(save_dir, 'metadata.json'), 'w') as f:
-        json.dump(metadata, f, indent=2)
+    session.write_metadata(
+        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
+                'resolution': [W, H], 'fps': FPS},
+        mode=mode,
+        capture_frames=capture_frames if mode == 'auto' else None,
+        actual_frames=actual_frames,
+        depth_filter={
+            'enabled':   use_filter,
+            'min_depth': min_d if use_filter else None,
+            'max_depth': max_d if use_filter else None,
+        },
+    )
 
 
 frame_count = 0
@@ -172,8 +155,8 @@ try:
             d_frame = aligned.get_depth_frame()
             if not c_frame or not d_frame:
                 continue
-            save_frame(frame_count, c_frame, d_frame)
             frame_count += 1
+            save_frame(frame_count, c_frame, d_frame)
             print(f"\rsaved: {frame_count}/{capture_frames} frames", end="", flush=True)
 
         print()   # 改行
@@ -195,8 +178,8 @@ try:
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('s'):
-                save_frame(frame_count, c_frame, d_frame)
                 frame_count += 1
+                save_frame(frame_count, c_frame, d_frame)
                 print(f"saved: {frame_count} frames")
             elif key == ord('q'):
                 break

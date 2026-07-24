@@ -1,13 +1,12 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-import os
 import gc
 import sys
 from pathlib import Path
-from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha, make_depth_colormap
+from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
+                   make_depth_colormap, Session, cam_code)
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -28,33 +27,13 @@ _depth_alpha = get_depth_alpha(_cfg, _cam['model'])
 
 i = 0
 
-save_dir = os.path.expanduser(_cfg['output']['images_dir'])
-_now     = datetime.now()
-date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
-date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
-time_str = _now.strftime('%H%M%S')    # 例: 101741
-save_dir_dated = os.path.join(save_dir, date_key)
-os.makedirs(save_dir_dated, exist_ok=True)
-
-existing_sessions = [d for d in os.scandir(save_dir_dated) if d.is_dir() and d.name.startswith('image')]
-N = len(existing_sessions) + 1
-base_path = os.path.join(save_dir_dated, f"image{N}_{date_str}_{time_str}_{_cam['model']}")
-
-paths = {
-    'color': os.path.join(base_path, 'color'),
-    'depth': os.path.join(base_path, 'depth'),
-    'pc':    os.path.join(base_path, 'pointcloud'),
-}
+_mods = ['color', 'depth_colormap', 'pointcloud']
 if _has_ir:
-    paths['ir_left']  = os.path.join(base_path, 'ir_left')
-    paths['ir_right'] = os.path.join(base_path, 'ir_right')
-    paths['ir_l_col'] = os.path.join(base_path, 'ir_left_color')
-    paths['ir_r_col'] = os.path.join(base_path, 'ir_right_color')
+    _mods += ['ir_left', 'ir_right', 'ir_left_color', 'ir_right_color']
 
-for p in paths.values():
-    os.makedirs(p, exist_ok=True)
-
-print("Save directory:", base_path)
+session = Session(_cfg['output']['images_dir'], cam_code(_cam['model']),
+                  tag=_args.tag, subdirs=_mods)
+print("Save directory:", session.dir)
 
 pipeline = rs.pipeline()
 config   = rs.config()
@@ -97,26 +76,31 @@ try:
 
         cv2.imshow('RealSense', preview)
 
-        filename = f"{i:04d}"
-        cv2.imwrite(os.path.join(paths['color'], filename + "_color.jpg"),          color)
-        cv2.imwrite(os.path.join(paths['depth'], filename + "_depth_colormap.jpg"), dm)
+        i += 1
+        cv2.imwrite(session.path(i, 'color'),          color)
+        cv2.imwrite(session.path(i, 'depth_colormap'), dm)
         if _has_ir:
-            cv2.imwrite(os.path.join(paths['ir_left'],  filename + "_ir_left.jpg"),        ir_l)
-            cv2.imwrite(os.path.join(paths['ir_right'], filename + "_ir_right.jpg"),       ir_r)
-            cv2.imwrite(os.path.join(paths['ir_l_col'], filename + "_ir_left_color.jpg"),  ir_lc)
-            cv2.imwrite(os.path.join(paths['ir_r_col'], filename + "_ir_right_color.jpg"), ir_rc)
+            cv2.imwrite(session.path(i, 'ir_left'),        ir_l)
+            cv2.imwrite(session.path(i, 'ir_right'),       ir_r)
+            cv2.imwrite(session.path(i, 'ir_left_color'),  ir_lc)
+            cv2.imwrite(session.path(i, 'ir_right_color'), ir_rc)
 
         pc.map_to(c_frame)
         points = pc.calculate(d_frame)
-        points.export_to_ply(os.path.join(paths['pc'], filename + "_pointcloud.ply"), c_frame)
+        points.export_to_ply(session.path(i, 'pointcloud', ext='ply'), c_frame)
 
-        i += 1
         print(f"\rsaved: {i} frames", end="", flush=True)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
 finally:
+    session.write_metadata(
+        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
+                'resolution': [W, H], 'fps': FPS},
+        modalities=_mods,
+        shot_count=i,
+    )
     pipeline.stop()
     cv2.destroyAllWindows()
     gc.collect()

@@ -8,7 +8,8 @@ import time
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha, make_depth_colormap
+from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
+                   make_depth_colormap, Session, cam_code)
 
 WARMUP_SECS = 2.0  # AE安定待ち（フレーム数でなく秒数で管理）
 
@@ -49,9 +50,8 @@ _has_ir      = (_cam['model'] != 'D405')
 _depth_alpha = get_depth_alpha(_cfg, _cam['model'])
 
 # ── --detect: GUIでモデルを選択してYOLOを読み込む ─────────────────────────────
-model         = None
-annotated_dir = None
-log_path      = None
+model    = None
+log_path = None
 
 if _args.detect:
     _model_path = ''
@@ -84,32 +84,17 @@ if _args.detect:
 # ── 出力先 ──────────────────────────────────────────────────────────────────
 _images_base    = Path(os.path.expanduser(_cfg['output']['images_dir']))
 _timelapse_base = _images_base.parent / 'timelapse_data'
-_now     = datetime.now()
-date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
-date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
-time_str = _now.strftime('%H%M%S')    # 例: 080000
-_date_dir = _timelapse_base / date_key
-_date_dir.mkdir(parents=True, exist_ok=True)
 
-existing_sessions = [d for d in _date_dir.iterdir() if d.is_dir() and d.name.startswith('timelapse')]
-N = len(existing_sessions) + 1
-session_dir  = _date_dir / f"timelapse{N}_{date_str}_{time_str}_{_cam['model']}"
-color_dir    = session_dir / 'color'
-depth_dir    = session_dir / 'depth'
-
-dirs = [color_dir, depth_dir]
+_mods = ['color', 'depth', 'depth_colormap']
 if _has_ir:
-    ir_left_dir  = session_dir / 'ir_left'
-    ir_right_dir = session_dir / 'ir_right'
-    dirs += [ir_left_dir, ir_right_dir]
-
+    _mods += ['ir_left', 'ir_right']
 if _args.detect:
-    annotated_dir = session_dir / 'annotated'
-    log_path      = session_dir / 'detection_log.csv'
-    dirs.append(annotated_dir)
+    _mods.append('annotated')
 
-for d in dirs:
-    d.mkdir(parents=True, exist_ok=True)
+session     = Session(_timelapse_base, cam_code(_cam['model']), tag=_args.tag, subdirs=_mods)
+session_dir = session.dir
+if _args.detect:
+    log_path = session_dir / 'detection_log.csv'
 
 # ── RealSense 初期化 ─────────────────────────────────────────────────────────
 pipeline = rs.pipeline()
@@ -155,11 +140,10 @@ def _capture(shot_idx: int, start: float) -> bool:
     # --relative-depth または D405（_depth_alpha=None）は相対正規化
     depth_vis = make_depth_colormap(depth_img, None if _args.relative_depth else _depth_alpha)
 
-    stem = f'{shot_idx:04d}_{datetime.now().strftime("%H%M%S")}'
     writes = {
-        color_dir / f'{stem}_color.jpg':          color_img,
-        depth_dir / f'{stem}_depth.png':          depth_img,
-        depth_dir / f'{stem}_depth_colormap.jpg': depth_vis,
+        session.path(shot_idx, 'color'):                  color_img,
+        session.path(shot_idx, 'depth', ext='png'):       depth_img,
+        session.path(shot_idx, 'depth_colormap'):         depth_vis,
     }
 
     if _has_ir:
@@ -167,13 +151,13 @@ def _capture(shot_idx: int, start: float) -> bool:
         ir1 = frames.get_infrared_frame(1)
         ir2 = frames.get_infrared_frame(2)
         if ir1 and ir2:
-            writes[ir_left_dir  / f'{stem}_ir_left.jpg']  = np.asanyarray(ir1.get_data())
-            writes[ir_right_dir / f'{stem}_ir_right.jpg'] = np.asanyarray(ir2.get_data())
+            writes[session.path(shot_idx, 'ir_left')]  = np.asanyarray(ir1.get_data())
+            writes[session.path(shot_idx, 'ir_right')] = np.asanyarray(ir2.get_data())
 
     write_ok = True
     for path, img in writes.items():
-        if not cv2.imwrite(str(path), img):
-            print(f"[警告] 書き込み失敗: {path.name}")
+        if not cv2.imwrite(path, img):
+            print(f"[警告] 書き込み失敗: {os.path.basename(path)}")
             write_ok = False
 
     elapsed_min = (time.time() - start) / 60
@@ -189,8 +173,8 @@ def _capture(shot_idx: int, start: float) -> bool:
         max_c   = float(confs.max())  if n > 0 else 0.0
         classes = ','.join(res.names[int(c)] for c in boxes.cls.cpu().numpy()) if n > 0 else ''
 
-        if not cv2.imwrite(str(annotated_dir / f'{stem}_annotated.jpg'), res.plot()):
-            print(f"[警告] 書き込み失敗: {stem}_annotated.jpg")
+        if not cv2.imwrite(session.path(shot_idx, 'annotated'), res.plot()):
+            print(f"[警告] 書き込み失敗: {session.name(shot_idx, 'annotated')}")
             write_ok = False
 
         with open(log_path, 'a', newline='') as f:
@@ -204,10 +188,11 @@ def _capture(shot_idx: int, start: float) -> bool:
     return write_ok
 
 
+shot_count = 0
+save_count = 0
+
 try:
     start_time = time.time()
-    shot_count = 0
-    save_count = 0
     next_time  = start_time
 
     while True:
@@ -236,5 +221,15 @@ try:
                 time.sleep(0.05)
 
 finally:
+    session.write_metadata(
+        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
+                'resolution': [W, H], 'fps': FPS},
+        modalities=_mods,
+        shot_count=save_count,
+        timelapse={'interval_sec': INTERVAL, 'duration_hour': _args.duration,
+                   'planned_shots': TOTAL_SHOTS, 'attempted': shot_count},
+        detect={'enabled': bool(_args.detect), 'model': _model_path if _args.detect else None,
+                'conf': CONF} if _args.detect else None,
+    )
     pipeline.stop()
     print(f"\n完了。試行 {shot_count} 枚 / 保存成功 {save_count} 枚。ログ: {log_path or 'なし'}")

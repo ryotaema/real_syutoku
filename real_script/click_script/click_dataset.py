@@ -3,13 +3,31 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-import os
 import gc
-from datetime import datetime
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code
 
-# 保存ディレクトリ
-base_dir = os.path.expanduser('~/annot_labelimg/real_syutoku/data/click_test_data')
-os.makedirs(base_dir, exist_ok=True)
+_args = build_parser().parse_args()
+_cfg  = apply_args(load_config(), _args)
+
+W   = _cfg['camera']['width']
+H   = _cfg['camera']['height']
+FPS = _cfg['camera']['fps']
+
+# --- カメラ検出 ---
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    sys.exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+
+# 保存ディレクトリ（画像とクリック座標をペアで置くためセッション直下にフラット配置）
+_base_dir = Path(_cfg['output']['images_dir']).expanduser().parent / 'click_test_data'
+session   = Session(_base_dir, cam_code(_cam['model']), tag=_args.tag)
+print(f"保存先: {session.dir}")
 
 # グローバル変数
 click_points = []
@@ -25,13 +43,15 @@ def mouse_callback(event, x, y, flags, param):
 # RealSense設定
 pipeline = rs.pipeline()
 config = rs.config()
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)#size
+config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)#size
 
 pipeline.start(config)
 print("マウスで検出対象をクリックしてください。's' で保存、'q' で終了")
 
 cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
 cv2.setMouseCallback('RealSense', mouse_callback)
+
+shot_count = 0
 
 try:
     while True:
@@ -52,10 +72,10 @@ try:
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord('s'):
-            # 保存処理
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            image_path = os.path.join(base_dir, f"image_{timestamp}.jpg")
-            txt_path = os.path.join(base_dir, f"points_{timestamp}.txt")
+            # 保存処理（画像とクリック座標は同じ連番を共有する）
+            shot_count += 1
+            image_path = session.path(shot_count, 'color', sub=False)
+            txt_path   = session.path(shot_count, 'points', ext='txt', sub=False)
 
             cv2.imwrite(image_path, color_image)
             with open(txt_path, 'w') as f:
@@ -70,6 +90,12 @@ try:
 
 
 finally:
+    session.write_metadata(
+        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
+                'resolution': [W, H], 'fps': FPS},
+        modalities=['color', 'points'],
+        shot_count=shot_count,
+    )
     pipeline.stop()
     cv2.destroyAllWindows()
     gc.collect()

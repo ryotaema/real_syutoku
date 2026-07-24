@@ -1,13 +1,12 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-import os
 import gc
 import sys
 from pathlib import Path
-from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, get_depth_alpha, make_depth_colormap
+from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
+                   make_depth_colormap, Session, cam_code)
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -29,31 +28,13 @@ _depth_alpha = get_depth_alpha(_cfg, _cam['model'])
 # --- 2. 保存ディレクトリの設定 ---
 i = 0
 
-save_dir_base = os.path.expanduser(_cfg['output']['images_dir'])
-_now     = datetime.now()
-date_key = _now.strftime('%Y_%m%d')   # 例: 2026_0624
-date_str = _now.strftime('%Y-%m-%d')  # 例: 2026-06-24
-time_str = _now.strftime('%H%M%S')    # 例: 101741
-save_dir_dated = os.path.join(save_dir_base, date_key)
-os.makedirs(save_dir_dated, exist_ok=True)
-
-existing_sessions = [d for d in os.scandir(save_dir_dated) if d.is_dir() and d.name.startswith('image')]
-N = len(existing_sessions) + 1
-base_path = os.path.join(save_dir_dated, f"image{N}_{date_str}_{time_str}_{_cam['model']}")
-
-path_color = os.path.join(base_path, "color")
-path_depth = os.path.join(base_path, "depth")
-paths_to_make = [path_color, path_depth]
+_mods = ['color', 'depth_colormap']
 if _has_ir:
-    path_ir_left        = os.path.join(base_path, "ir_left")
-    path_ir_right       = os.path.join(base_path, "ir_right")
-    path_ir_left_color  = os.path.join(base_path, "ir_left_color")
-    path_ir_right_color = os.path.join(base_path, "ir_right_color")
-    paths_to_make += [path_ir_left, path_ir_right, path_ir_left_color, path_ir_right_color]
+    _mods += ['ir_left', 'ir_right', 'ir_left_color', 'ir_right_color']
 
-print(f"画像を {base_path} に保存します")
-for p in paths_to_make:
-    os.makedirs(p, exist_ok=True)
+session = Session(_cfg['output']['images_dir'], cam_code(_cam['model']),
+                  tag=_args.tag, subdirs=_mods)
+print(f"画像を {session.dir} に保存します")
 
 
 # --- 3. RealSenseの初期化 ---
@@ -148,15 +129,15 @@ try:
 
         cv2.imshow('RealSense', _make_preview(color_image, depth_colormap, ir_colormap1, ir_colormap2))
 
-        cv2.imwrite(os.path.join(path_color, f"{i}_color.jpg"),          color_image)
-        cv2.imwrite(os.path.join(path_depth, f"{i}_depth_colormap.jpg"), depth_colormap)
-        if _has_ir:
-            cv2.imwrite(os.path.join(path_ir_left,        f"{i}_ir_left.jpg"),        ir_image1)
-            cv2.imwrite(os.path.join(path_ir_right,       f"{i}_ir_right.jpg"),       ir_image2)
-            cv2.imwrite(os.path.join(path_ir_left_color,  f"{i}_ir_left_color.jpg"),  ir_colormap1)
-            cv2.imwrite(os.path.join(path_ir_right_color, f"{i}_ir_right_color.jpg"), ir_colormap2)
-
         i += 1
+        cv2.imwrite(session.path(i, 'color'),          color_image)
+        cv2.imwrite(session.path(i, 'depth_colormap'), depth_colormap)
+        if _has_ir:
+            cv2.imwrite(session.path(i, 'ir_left'),        ir_image1)
+            cv2.imwrite(session.path(i, 'ir_right'),       ir_image2)
+            cv2.imwrite(session.path(i, 'ir_left_color'),  ir_colormap1)
+            cv2.imwrite(session.path(i, 'ir_right_color'), ir_colormap2)
+
         print(f"\rsaved: {i} frames", end="", flush=True)
 
         key = cv2.waitKey(1) & 0xFF
@@ -166,6 +147,12 @@ try:
 
 finally:
     print("ストリーミングを停止し、リソースを解放します。")
+    session.write_metadata(
+        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
+                'resolution': [W, H], 'fps': FPS},
+        modalities=_mods,
+        shot_count=i,
+    )
     pipeline.stop()
     cv2.destroyAllWindows()
     gc.collect()

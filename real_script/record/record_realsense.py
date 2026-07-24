@@ -4,9 +4,8 @@ import cv2
 import os
 import sys
 from pathlib import Path
-from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera
+from utils import load_config, build_parser, apply_args, detect_camera, make_prefix, cam_code
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -15,12 +14,20 @@ W   = _cfg['camera']['width']
 H   = _cfg['camera']['height']
 FPS = _cfg['camera']['fps']
 
-timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+try:
+    _cam = detect_camera()
+except RuntimeError as e:
+    print(f"エラー: {e}")
+    exit(1)
+print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+
+# 動画はショット連番を持たないため {cam}_{YYMMDD}_{HHMMSS}_{種別}.{ext} で命名する
 save_dir = os.path.expanduser(_cfg['output']['mp4_dir'])
 os.makedirs(save_dir, exist_ok=True)
+prefix   = make_prefix(cam_code(_cam['model']))
 
-bag_path = os.path.join(save_dir, f'stream_{timestamp}.bag')
-mp4_path = os.path.join(save_dir, f'color_video_{timestamp}.mp4')
+bag_path = os.path.join(save_dir, f'{prefix}_stream.bag')
+mp4_path = os.path.join(save_dir, f'{prefix}_c.mp4')
 
 config = rs.config()
 config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
@@ -32,13 +39,6 @@ video_writer = cv2.VideoWriter(mp4_path, fourcc, FPS, (W, H))
 if not video_writer.isOpened():
     print(f"Failed to open VideoWriter for {mp4_path}")
     exit(1)
-
-try:
-    _cam = detect_camera()
-except RuntimeError as e:
-    print(f"エラー: {e}")
-    exit(1)
-print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
 pipeline = rs.pipeline()
 align_to = rs.stream.color
