@@ -41,8 +41,7 @@ OpenVINOを使う場合は `openvino_env/` の仮想環境を使用してくだ�
 
 ## カメラ自動認識
 
-すべてのスクリプトは起動時に接続されているカメラを自動検出し，**D435・D405・Gemini 336 のどれでも動作**します
-（`record/` の録画スクリプトのみ RealSense 専用）．
+すべてのスクリプトは起動時に接続されているカメラを自動検出し，**D435・D405・Gemini 336 のどれでも動作**します．
 
 1台だけつながっていればそのカメラを自動で使います．2台以上つながっている場合は起動時に
 カメラ選択ダイアログが表示されます（画面の無い環境ではターミナルで番号を選びます）．
@@ -60,7 +59,7 @@ OpenVINOを使う場合は `openvino_env/` の仮想環境を使用してくだ�
 | ir_left / ir_right | ✓ | なし | ✓ |
 | pointcloud | ✓ | ✓ | ✓ |
 | 深度カラーマップ | alpha=0.4 固定（~637mm 飽和） | フレーム内相対正規化 | alpha=0.4 固定（~637mm 飽和） |
-| 動画録画（`record/`） | ✓ | ✓ | 未対応 |
+| 動画録画（`record/`） | ✓ | ✓ | ✓（.bag は Orbbec 独自形式） |
 
 機種によって画質・深度の出方が異なるため，**どのカメラで撮ったかは必ずデータに残ります**．
 ファイル名・セッションディレクトリ名の先頭がカメラコード（[データ命名規則](#データ命名規則)）になり，
@@ -321,7 +320,19 @@ python3 process/timelapse_analysis.py data/timelapse_data/2026_0624/timelapse1_2
 
 ### 動画録画
 
-D435/D405 両対応です（.bag 録画を使うため RealSense 専用．Gemini 336 では起動時にエラー終了します）．D405 接続時は IR ストリームを除いて録画します．
+全機種対応です．D405 接続時は IR ストリームを除いて録画します．
+
+`.bag` は SDK ごとの形式で保存されます（RealSense の `.bag` と Orbbec の `.bag` は互換性がなく，
+RealSense Viewer で Orbbec の `.bag` は開けません）．`convert_bag_to_mp4.py` はどちらの形式かを
+自動で判別し，解像度・FPS も録画時の値を `.bag` から読み取ります．
+
+```
+mp4_dir/
+├── {cam}_{YYMMDD}_{HHMMSS}_stream.bag   # 生データ（color / depth / IR）
+├── {cam}_{YYMMDD}_{HHMMSS}_c.mp4        # カラー動画（record_realsense）
+├── {cam}_{YYMMDD}_{HHMMSS}_det.mp4      # YOLO 描画済み動画（record_with_yolo）
+└── {cam}_{YYMMDD}_{HHMMSS}_stream.mp4   # convert_bag_to_mp4 の出力
+```
 
 ```bash
 # .bag 形式で録画（終了後に変換コマンドが表示されます）

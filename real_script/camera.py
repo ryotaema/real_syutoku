@@ -10,6 +10,9 @@
     fr.ir_left / ir_right    # uint8 (H, W)。位置合わせしない元の IR
     cam.stop()
 
+open_camera(..., record_path='xxx.bag') で取得中のストリームを .bag に録画する（stop() で確定）。
+.bag の形式は SDK ごとに異なり互換性は無い（RealSense / Orbbec 独自）。再生は open_playback()。
+
 depth の単位は cam.depth_scale（m / 1単位）。D435・Gemini336 は 0.001（mm）、D405 は 0.0001。
 SDK は使うときに import するので、片方しか入っていない環境でも動く。
 """
@@ -77,10 +80,37 @@ def _list_orbbec():
     } for i in range(dl.get_count())]
 
 
-def open_camera(info, width, height, fps, color=True, depth=True, ir=False, align=True):
-    """detect_camera() の戻り値からカメラを作る（start() はまだ呼ばない）。"""
+def open_camera(info, width, height, fps, color=True, depth=True, ir=False, align=True,
+                record_path=None):
+    """detect_camera() の戻り値からカメラを作る（start() はまだ呼ばない）。
+    record_path を指定すると、有効にした全ストリームをその .bag に録画する。"""
     cls = {'realsense': _RealSenseCamera, 'orbbec': _OrbbecCamera}[info['backend']]
-    return cls(info['serial'], width, height, fps, color, depth, ir, align)
+    return cls(info['serial'], width, height, fps, color, depth, ir, align, record_path)
+
+
+# ============================================================================
+# .bag 再生
+# ============================================================================
+
+def bag_backend(path):
+    """.bag がどの SDK で録画されたかを返す（'realsense' / 'orbbec'）。
+    どちらも ROS bag 形式なので、先頭付近のトピック名で見分ける。"""
+    with open(path, 'rb') as f:
+        head = f.read(1 << 20)
+    if not head.startswith(b'#ROSBAG'):
+        raise RuntimeError(f".bag ファイルではありません: {path}")
+    if b'topic=/device_0/' in head or b'topic=/file_version' in head:
+        return 'realsense'
+    if b'topic=/cam/' in head:
+        return 'orbbec'
+    raise RuntimeError(f"録画した SDK を判別できません: {path}")
+
+
+def open_playback(path):
+    """.bag を color だけ再生するリーダーを作る（start() はまだ呼ばない）。
+    read() は Frames（color のみ）、最後まで再生すると None を返して eof が True になる。"""
+    cls = {'realsense': _RealSensePlayback, 'orbbec': _OrbbecPlayback}[bag_backend(path)]
+    return cls(path)
 
 
 # ============================================================================
@@ -105,11 +135,12 @@ def write_ply(path, xyz, rgb):
 
 
 class _CameraBase:
-    def __init__(self, serial, width, height, fps, color, depth, ir, align):
+    def __init__(self, serial, width, height, fps, color, depth, ir, align, record_path=None):
         self.serial = serial
         self.width, self.height, self.fps = width, height, fps
         self.use_color, self.use_depth, self.use_ir = color, depth, ir
         self.use_align   = align and color and depth
+        self.record_path = record_path
         self.depth_scale = None     # m / 1単位。start() 後に確定
 
     def __enter__(self):
@@ -156,6 +187,8 @@ class _RealSenseCamera(_CameraBase):
                 cfg.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8, FPS)
         except RuntimeError as e:
             raise RuntimeError(f"ストリームの設定に失敗しました: {e}")
+        if self.record_path:
+            cfg.enable_record_to_file(self.record_path)
 
         self._pipe    = rs.pipeline()
         self._profile = self._pipe.start(cfg)
@@ -165,6 +198,8 @@ class _RealSenseCamera(_CameraBase):
 
     def stop(self):
         self._pipe.stop()
+        # 録画時は pipeline（内部の recorder）が破棄されたときに .bag のインデックスが書かれる
+        self._pipe = self._profile = None
 
     def read(self, timeout_ms=5000):
         try:
@@ -224,6 +259,8 @@ class _OrbbecCamera(_CameraBase):
         self._ctx = ob.Context()   # Device より先に破棄されないよう保持する
         dev = self._ctx.query_devices().get_device_by_serial_number(self.serial)
         self._pipe = ob.Pipeline(dev)
+        # 録画は pipeline の開始前に RecordDevice を作っておく必要がある
+        self._recorder = ob.RecordDevice(dev, self.record_path) if self.record_path else None
         cfg = ob.Config()
         W, H, FPS = self.width, self.height, self.fps
         S = ob.OBSensorType
@@ -247,14 +284,13 @@ class _OrbbecCamera(_CameraBase):
         self._param = self._pipe.get_camera_param()
 
     def stop(self):
+        # RecordDevice を破棄すると .bag が閉じられる（pipeline 停止より先に行う）
+        self._recorder = None
         self._pipe.stop()
 
     @staticmethod
     def _image(frame, dtype, channels=1):
-        vf = frame.as_video_frame()
-        shape = (vf.get_height(), vf.get_width()) + ((channels,) if channels > 1 else ())
-        # SDK のバッファは次フレームで再利用されるので copy しておく
-        return np.frombuffer(vf.get_data(), dtype=dtype).reshape(shape).copy()
+        return _orbbec_image(frame, dtype, channels)
 
     def read(self, timeout_ms=5000):
         frames = self._pipe.wait_for_frames(timeout_ms)
@@ -311,3 +347,102 @@ class _OrbbecCamera(_CameraBase):
         x = (u - i.cx) * z / i.fx
         y = (v - i.cy) * z / i.fy
         return np.stack((x, y, z), axis=-1)
+
+
+def _orbbec_image(frame, dtype, channels=1):
+    vf = frame.as_video_frame()
+    shape = (vf.get_height(), vf.get_width()) + ((channels,) if channels > 1 else ())
+    # SDK のバッファは次フレームで再利用されるので copy しておく
+    return np.frombuffer(vf.get_data(), dtype=dtype).reshape(shape).copy()
+
+
+# ============================================================================
+# 再生（color のみ）
+# ============================================================================
+
+class _PlaybackBase:
+    def __init__(self, path):
+        self.path = path
+        self.eof  = False
+        self.fps  = None    # start() 後に確定
+        self.size = None    # (W, H)。start() 後に確定
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
+
+
+class _RealSensePlayback(_PlaybackBase):
+
+    def start(self):
+        import pyrealsense2 as rs
+        self._rs = rs
+        cfg = rs.config()
+        cfg.enable_device_from_file(self.path, repeat_playback=False)
+        cfg.enable_stream(rs.stream.color)     # 解像度・形式は録画時のもの
+        self._pipe = rs.pipeline()
+        profile = self._pipe.start(cfg)
+        vp = profile.get_stream(rs.stream.color).as_video_stream_profile()
+        self.fps, self.size = vp.fps(), (vp.width(), vp.height())
+        self._rgb = vp.format() == rs.format.rgb8
+
+    def stop(self):
+        self._pipe.stop()
+
+    def read(self, timeout_ms=5000):
+        try:
+            frames = self._pipe.wait_for_frames(timeout_ms)
+        except RuntimeError:        # 再生終了後はフレームが来ずタイムアウトする
+            self.eof = True
+            return None
+        cf = frames.get_color_frame()
+        if not cf:
+            return None
+        color = np.asanyarray(cf.get_data())
+        return Frames(color=color[..., ::-1].copy() if self._rgb else color)
+
+
+class _OrbbecPlayback(_PlaybackBase):
+
+    def start(self):
+        ob = _import_orbbec()
+        self._ob = ob
+        self._pb   = ob.PlaybackDevice(self.path)
+        self._pipe = ob.Pipeline(self._pb)
+        cfg = ob.Config()
+        cfg.enable_stream(ob.OBSensorType.COLOR_SENSOR)   # 解像度・形式は録画時のもの
+        self._pipe.start(cfg)
+        # fps / size は最初のフレームから取る（read() で返せるよう保持しておく）
+        self._first = None
+        while self._first is None and not self.eof:
+            self._first = self.read()
+        if self._first is not None:
+            cf = self._first._raw
+            vp = cf.get_stream_profile().as_video_stream_profile()
+            self.fps, self.size = vp.get_fps(), (cf.get_width(), cf.get_height())
+
+    def stop(self):
+        self._pipe.stop()
+
+    def read(self, timeout_ms=1000):
+        if getattr(self, '_first', None) is not None:
+            fr, self._first = self._first, None
+            return fr
+        fs = self._pipe.wait_for_frames(timeout_ms)
+        if fs is None:
+            if self._pb.get_playback_status() == self._ob.OBPlaybackStatus.STOPPED:
+                self.eof = True
+            return None
+        cf = fs.get_color_frame()
+        if cf is None:
+            return None
+        fmt = cf.get_format()
+        if fmt not in (self._ob.OBFormat.BGR, self._ob.OBFormat.RGB):
+            raise RuntimeError(f"未対応の color 形式です: {fmt}")
+        color = _orbbec_image(cf, np.uint8, 3)
+        if fmt == self._ob.OBFormat.RGB:
+            color = color[..., ::-1].copy()
+        return Frames(color=color, raw=cf)
