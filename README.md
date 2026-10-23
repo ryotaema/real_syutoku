@@ -10,6 +10,7 @@ real_syutoku/
 │   ├── config.yaml          # 解像度・FPS・出力先・モデルパスの設定
 │   ├── utils.py             # 共通ユーティリティ（設定読み込み・カメラ検出）
 │   ├── camera.py            # カメラ取得の共通層（RealSense / Orbbec の差を吸収）
+│   ├── gui.py               # 統合GUI（各スクリプトをボタンで起動）
 │   ├── collect/             # 静止画データ収集
 │   ├── record/              # 動画録画
 │   ├── detect/              # リアルタイム推論
@@ -38,6 +39,24 @@ sudo apt install python3-tk
 ```
 
 OpenVINOを使う場合は `openvino_env/` の仮想環境を使用してください．
+
+## 使い方（GUI）
+
+はじめての人はまず GUI から使ってください．
+
+```bash
+python3 real_script/gui.py
+```
+
+1. 上の「カメラ」に接続中のカメラが表示されます（2台以上つないでいるときはここで選びます）．
+2. やりたいことのタブ（画像・点群・動画・タイムラプス・推論・アノテーション）を開き，ボタンを押します．
+3. カメラ映像のウィンドウが開いたら，ボタン横の「操作」に書かれたキーで保存・終了します．
+4. 途中でやめたいときは「停止」を押します（データは保存されたまま安全に終了します）．
+5. 「保存先を開く」で，最後に使った機能の保存フォルダが開きます．
+
+GUI は下記のスクリプトをボタンで起動しているだけなので，コマンドラインからの使い方も今までどおりです．
+細かいオプション（解像度・FPS など）を変えたいときはコマンドラインか `config.yaml` を使ってください．
+（OpenVINO 推論と .bag のみの録画 `mp4_collect.py` は GUI には入れていません．）
 
 ## カメラ自動認識
 
@@ -92,15 +111,20 @@ camera:
     G336: 0.4   # Gemini 336 も depth は mm 単位
     default: 0.4
 
-output:
-  images_dir: ~/annot_labelimg/real_syutoku/data/images
-  mp4_dir: ~/annot_labelimg/real_syutoku/data/mp4
+output:                  # config.yaml からの相対パス（~ や絶対パスも可）
+  images_dir: ../data/images
+  pointcloud_dir: ../data/pointcloud
+  timelapse_dir: ../data/timelapse_data
+  mp4_dir: ../data/mp4
 
 model:
   yolo_path: model/260217_pepper_yolov11x_aug.pt
   openvino_path: model/250626_weights/openvino_model/best.xml
   confidence_threshold: 0.3
 ```
+
+出力先は既定でリポジトリ内の `data/` です（`config.yaml` からの相対パスなので，リポジトリをどこに clone しても
+そのリポジトリの `data/` に保存されます）．クリック座標データは `images_dir` と同じ階層の `click_test_data/` に保存されます．
 
 ## データ命名規則
 
@@ -215,6 +239,7 @@ python3 tools/rename_legacy.py data/click_test_data/250911_testdata_click --cam 
 | `--width N` | collect / record / detect | `--width 1280` |
 | `--height N` | collect / record / detect | `--height 720` |
 | `--tag NAME` | collect / click_script | `--tag greenhouse`（セッションディレクトリ名にのみ付与） |
+| `--serial SERIAL` | collect / record / detect / click_dataset | `--serial CP9KB530001A`（複数台接続時に使うカメラを指定．省略時は選択ダイアログ） |
 | `--model PATH` | record_with_yolo / detect | `--model /path/to/model.pt` |
 | `--conf F` | vino_yolo_detection / timelapse_detect（--detect 時） | `--conf 0.5` |
 | `--interval N` | timelapse_detect | `--interval 300` |

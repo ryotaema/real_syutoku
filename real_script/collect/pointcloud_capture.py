@@ -35,7 +35,7 @@ use_filter = not _args.no_filter
 
 # --- カメラ検出 ---
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     exit(1)
@@ -44,7 +44,7 @@ print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 # --- 出力ディレクトリ ---
 # color/depth/ply は点群処理でまとめて扱うためセッション直下にフラットに置く
 # （point_merge.py が session_dir 直下を走査する）
-session  = Session(_cfg['pointcloud']['output_dir'], cam_code(_cam['model']), tag=_args.tag)
+session  = Session(_cfg['output']['pointcloud_dir'], cam_code(_cam['model']), tag=_args.tag)
 save_dir = str(session.dir)
 
 print(f"保存先: {save_dir}")

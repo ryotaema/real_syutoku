@@ -41,7 +41,7 @@ TOTAL_SHOTS = TOTAL_SEC // INTERVAL
 
 # ── カメラ検出 ───────────────────────────────────────────────────────────────
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     sys.exit(1)
@@ -82,8 +82,7 @@ if _args.detect:
         print(f"モデル読み込み: {_model_path}")
 
 # ── 出力先 ──────────────────────────────────────────────────────────────────
-_images_base    = Path(os.path.expanduser(_cfg['output']['images_dir']))
-_timelapse_base = _images_base.parent / 'timelapse_data'
+_timelapse_base = _cfg['output']['timelapse_dir']
 
 _mods = ['color', 'depth', 'depth_colormap']
 if _has_ir:

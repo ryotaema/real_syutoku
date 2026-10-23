@@ -15,10 +15,20 @@ _CAMERA_MODELS = {
 }
 
 
-def detect_camera():
+def list_cameras():
+    """接続されている全カメラ（RealSense / Orbbec）を model 付きで返す。"""
+    from camera import list_devices
+    devices = list_devices()
+    for dev in devices:
+        dev['model'] = _model_from_name(dev['name'])
+    return devices
+
+
+def detect_camera(serial=None):
     """接続されているカメラ（RealSense / Orbbec）を検出して返す。
 
-    1台だけならそれを自動で使う。2台以上つながっている場合は選択ダイアログを出す
+    serial を指定するとそのカメラを使う（--serial / 統合GUI から渡される）。
+    指定が無く1台だけならそれを自動で使う。2台以上つながっている場合は選択ダイアログを出す
     （表示できない環境ではターミナルで番号を選ぶ）。
 
     Returns:
@@ -28,15 +38,17 @@ def detect_camera():
     Raises:
         RuntimeError: デバイスが見つからない・選択がキャンセルされた場合
     """
-    from camera import list_devices
-    devices = list_devices()
+    devices = list_cameras()
     if not devices:
         raise RuntimeError("カメラ（RealSense / Orbbec）が接続されていません")
 
-    for dev in devices:
-        dev['model'] = _model_from_name(dev['name'])
-
-    cam = devices[0] if len(devices) == 1 else _select_camera(devices)
+    if serial:
+        matched = [d for d in devices if d['serial'] == serial]
+        if not matched:
+            raise RuntimeError(f"シリアル {serial} のカメラが見つかりません")
+        cam = matched[0]
+    else:
+        cam = devices[0] if len(devices) == 1 else _select_camera(devices)
     if cam['model'] == 'unknown':
         print(f"警告: 未登録の機種です（{cam['name']}）。ファイル名のカメラコードは 'unk' になります。"
               "utils._CAMERA_MODELS に追加してください。")
@@ -158,7 +170,12 @@ def make_depth_colormap(depth_image, alpha):
 
 def load_config():
     with open(_CFG_PATH) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    # output のパス: ~展開 → 相対パスなら config.yaml 基準で解決（nyx660_syutoku と同じ）
+    for key, p in cfg['output'].items():
+        p = os.path.expanduser(p)
+        cfg['output'][key] = p if os.path.isabs(p) else str((_CFG_PATH.parent / p).resolve())
+    return cfg
 
 
 def build_parser(include_model=False, include_conf=False, bag_input=False):
@@ -174,6 +191,8 @@ def build_parser(include_model=False, include_conf=False, bag_input=False):
     parser.add_argument('--tag',    type=str,   default=None, metavar='NAME',
                         help='セッションディレクトリ名に付ける任意タグ 例: greenhouse'
                              '（ファイル名には付かない）')
+    parser.add_argument('--serial', type=str,   default=None, metavar='SERIAL',
+                        help='使うカメラのシリアル番号（複数台接続時。省略時は自動／選択ダイアログ）')
     if include_model:
         parser.add_argument('--model', type=str, default=None, metavar='PATH',
                             help='モデルパス（config.yamlの値を上書き）')

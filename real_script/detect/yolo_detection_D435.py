@@ -18,7 +18,7 @@ _root = Path(__file__).parent.parent
 YOLO_MODEL_PATH = str(_root / _cfg['model']['yolo_path'])
 
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     exit(1)

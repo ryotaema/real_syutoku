@@ -9,8 +9,11 @@ camera:
     default: 0.4
 
 output:
-  images_dir: ~/annot_labelimg/real_syutoku/data/images
-  mp4_dir: ~/annot_labelimg/real_syutoku/data/mp4
+  # config.yaml からの相対パス（~ や絶対パスも可）。nyx660_syutoku と同じキー
+  images_dir: ../data/images
+  pointcloud_dir: ../data/pointcloud
+  timelapse_dir: ../data/timelapse_data
+  mp4_dir: ../data/mp4
 
 model:
   # real_script/ からの相対パス
@@ -19,7 +22,6 @@ model:
   confidence_threshold: 0.3
 
 pointcloud:
-  output_dir: ~/annot_labelimg/real_syutoku/data/pointcloud
   capture_frames: 50   # autoモードのデフォルトフレーム数
   min_depth: 0.1       # 深度フィルタの最小距離 (m)
   max_depth: 1.0       # 深度フィルタの最大距離 (m)　← 対象物体に合わせて変更

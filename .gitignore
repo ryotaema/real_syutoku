@@ -2,3 +2,10 @@ CLAUDE.md
 real_script/model/
 data/
 openvino_env/
+
+# Python
+__pycache__/
+*.pyc
+
+# Orbbec SDK のログ（camera.py では抑止しているが SDK 単体で動かした場合に出る）
+Log/

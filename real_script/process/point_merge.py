@@ -146,9 +146,9 @@ def main():
     icp_threshold = args.icp_threshold if args.icp_threshold is not None else pc_cfg['icp_threshold']
 
     if args.session_dir is None:
-        session_dir = find_latest_session(pc_cfg['output_dir'])
+        session_dir = find_latest_session(cfg['output']['pointcloud_dir'])
         if session_dir is None:
-            print(f"セッションが見つかりません: {pc_cfg['output_dir']}")
+            print(f"セッションが見つかりません: {cfg['output']['pointcloud_dir']}")
             print("先に pointcloud_capture.py でデータを収集してください。")
             sys.exit(1)
         print(f"最新セッションを使用: {session_dir}")

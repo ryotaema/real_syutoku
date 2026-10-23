@@ -17,7 +17,7 @@ FPS = _cfg['camera']['fps']
 
 # --- 1. カメラ検出 ---
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     exit(1)

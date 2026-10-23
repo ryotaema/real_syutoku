@@ -48,7 +48,7 @@ def get_color_frame(camera):
 
 # カメラの初期化
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     exit(1)
