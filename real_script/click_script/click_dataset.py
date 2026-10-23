@@ -5,7 +5,7 @@ import gc
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code
+from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code, camera_metadata
 from camera import open_camera
 
 _args = build_parser().parse_args()
@@ -89,8 +89,7 @@ try:
 
 finally:
     session.write_metadata(
-        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
-                'resolution': [W, H], 'fps': FPS},
+        camera=camera_metadata(_cam, W, H, FPS, camera),
         modalities=['color', 'points'],
         shot_count=shot_count,
     )

@@ -5,7 +5,7 @@ import json
 import gc
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code
+from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code, camera_metadata
 from camera import open_camera
 
 # --- 設定読み込み ---
@@ -82,9 +82,7 @@ def save_frame(idx, fr):
 
 def write_metadata(actual_frames):
     session.write_metadata(
-        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
-                'resolution': [W, H], 'fps': FPS},
-        depth_scale=camera.depth_scale,
+        camera=camera_metadata(_cam, W, H, FPS, camera),
         mode=mode,
         capture_frames=capture_frames if mode == 'auto' else None,
         actual_frames=actual_frames,

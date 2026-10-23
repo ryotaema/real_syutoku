@@ -16,29 +16,117 @@ _CAMERA_MODELS = {
 
 
 def detect_camera():
-    """接続されている最初のカメラ（RealSense → Orbbec の順）を検出して返す。
+    """接続されているカメラ（RealSense / Orbbec）を検出して返す。
+
+    1台だけならそれを自動で使う。2台以上つながっている場合は選択ダイアログを出す
+    （表示できない環境ではターミナルで番号を選ぶ）。
 
     Returns:
         dict: {'name': str, 'model': str, 'serial': str, 'backend': str}
               model は 'D435' / 'D405' / 'G336' / 'unknown' のいずれか
               backend は 'realsense' / 'orbbec'（camera.open_camera が使う）
     Raises:
-        RuntimeError: デバイスが見つからない場合
+        RuntimeError: デバイスが見つからない・選択がキャンセルされた場合
     """
     from camera import list_devices
     devices = list_devices()
     if not devices:
         raise RuntimeError("カメラ（RealSense / Orbbec）が接続されていません")
 
-    cam = devices[0]
-    cam['model'] = 'unknown'
-    name_lower = cam['name'].lower()
-    for key, label in _CAMERA_MODELS.items():
-        if key in name_lower:
-            cam['model'] = label
-            break
+    for dev in devices:
+        dev['model'] = _model_from_name(dev['name'])
+
+    cam = devices[0] if len(devices) == 1 else _select_camera(devices)
+    if cam['model'] == 'unknown':
+        print(f"警告: 未登録の機種です（{cam['name']}）。ファイル名のカメラコードは 'unk' になります。"
+              "utils._CAMERA_MODELS に追加してください。")
 
     return cam
+
+
+def _model_from_name(name):
+    name_lower = name.lower()
+    for key, label in _CAMERA_MODELS.items():
+        if key in name_lower:
+            return label
+    return 'unknown'
+
+
+def _camera_label(dev):
+    return f"{dev['name']}  (シリアル: {dev['serial']})"
+
+
+def _select_camera(devices):
+    """複数台接続時の選択。GUI が使えなければターミナルで選ぶ。"""
+    try:
+        return _select_camera_gui(devices)
+    except ImportError:
+        pass                # tkinter 未インストール
+    except Exception as e:  # ディスプレイが無い（ssh 等）
+        if type(e).__name__ != 'TclError':
+            raise
+    return _select_camera_cli(devices)
+
+
+def _select_camera_gui(devices):
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.title('カメラ選択')
+    root.resizable(False, False)
+    tk.Label(root, text=f'{len(devices)} 台のカメラが接続されています。使用するカメラを選んでください。',
+             padx=12, pady=8).pack(anchor='w')
+
+    choice = tk.IntVar(value=0)
+    for i, dev in enumerate(devices):
+        tk.Radiobutton(root, text=_camera_label(dev), variable=choice, value=i,
+                       padx=16, anchor='w').pack(fill='x')
+
+    result = {}
+
+    def ok(_event=None):
+        result['cam'] = devices[choice.get()]
+        root.destroy()
+
+    buttons = tk.Frame(root, pady=8)
+    buttons.pack()
+    tk.Button(buttons, text='OK', width=10, command=ok).pack(side='left', padx=4)
+    tk.Button(buttons, text='キャンセル', width=10, command=root.destroy).pack(side='left', padx=4)
+    root.bind('<Return>', ok)
+    root.bind('<Escape>', lambda _e: root.destroy())
+
+    root.attributes('-topmost', True)   # OpenCV のウィンドウ等に隠れないように
+    root.mainloop()
+
+    if 'cam' not in result:
+        raise RuntimeError("カメラが選択されませんでした")
+    return result['cam']
+
+
+def _select_camera_cli(devices):
+    print(f"{len(devices)} 台のカメラが接続されています。")
+    for i, dev in enumerate(devices, 1):
+        print(f"  [{i}] {_camera_label(dev)}")
+    while True:
+        try:
+            s = input(f"使用するカメラの番号 (1-{len(devices)}): ").strip()
+        except EOFError:
+            raise RuntimeError("カメラが選択されませんでした")
+        if s.isdigit() and 1 <= int(s) <= len(devices):
+            return devices[int(s) - 1]
+
+
+def camera_metadata(cam, width, height, fps, camera=None):
+    """metadata.json の 'camera' 項目。どの機種・どの個体・どの条件で撮ったかを残す。
+
+    cam    : detect_camera() の戻り値
+    camera : 起動済みの camera.open_camera() の戻り値（depth 単位の記録用。無ければ省略）
+    """
+    meta = {'name': cam['name'], 'model': cam['model'], 'serial': cam['serial'],
+            'backend': cam['backend'], 'resolution': [width, height], 'fps': fps}
+    if camera is not None and camera.depth_scale is not None:
+        meta['depth_scale'] = camera.depth_scale   # depth png の 1単位あたりの m
+    return meta
 
 
 def get_depth_alpha(cfg, model):
@@ -112,7 +200,7 @@ def apply_args(cfg, args, model_key='yolo_path'):
 #   {cam}_{YYMMDD}_{HHMMSS}_{NNNNN}_{mod}.{ext}
 #   例) d435_260707_101741_00042_c.jpg
 #
-#   cam    : カメラコード（d435 / d405 / nyx）。リポジトリを跨いでも衝突しない
+#   cam    : カメラコード（d435 / d405 / g336 / nyx）。リポジトリを跨いでも衝突しない
 #   YYMMDD : 取得日
 #   HHMMSS : セッション開始時刻。1プロセス＝1セッションで固定値
 #   NNNNN  : セッション内のショット連番（撮影時刻ではない）。

@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
-                   make_depth_colormap, Session, cam_code)
+                   make_depth_colormap, Session, cam_code, camera_metadata)
 from camera import open_camera
 
 WARMUP_SECS = 2.0  # AE安定待ち（フレーム数でなく秒数で管理）
@@ -210,8 +210,7 @@ try:
 
 finally:
     session.write_metadata(
-        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
-                'resolution': [W, H], 'fps': FPS},
+        camera=camera_metadata(_cam, W, H, FPS, camera),
         modalities=_mods,
         shot_count=save_count,
         timelapse={'interval_sec': INTERVAL, 'duration_hour': _args.duration,

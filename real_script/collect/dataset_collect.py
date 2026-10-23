@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
-                   make_depth_colormap, Session, cam_code)
+                   make_depth_colormap, Session, cam_code, camera_metadata)
 from camera import open_camera
 
 _args = build_parser().parse_args()
@@ -120,8 +120,7 @@ try:
 finally:
     print("ストリーミングを停止し、リソースを解放します。")
     session.write_metadata(
-        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
-                'resolution': [W, H], 'fps': FPS},
+        camera=camera_metadata(_cam, W, H, FPS, camera),
         modalities=_mods,
         shot_count=i,
     )

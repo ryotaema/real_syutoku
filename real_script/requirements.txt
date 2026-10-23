@@ -1,5 +1,6 @@
 numpy
 opencv-python
-pyrealsense2
+pyrealsense2      # RealSense（D435 / D405）を使う場合
+pyorbbecsdk2      # Orbbec（Gemini 336）を使う場合
 ultralytics
 pyyaml

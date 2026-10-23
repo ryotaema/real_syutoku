@@ -20,6 +20,9 @@ except RuntimeError as e:
     print(f"エラー: {e}")
     exit(1)
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
+if _cam['backend'] != 'realsense':
+    print("このスクリプトは .bag 録画を使うため RealSense 専用です（Orbbec は未対応）。")
+    exit(1)
 
 # 動画はショット連番を持たないため {cam}_{YYMMDD}_{HHMMSS}_{種別}.{ext} で命名する
 save_dir = os.path.expanduser(_cfg['output']['mp4_dir'])
@@ -30,6 +33,7 @@ bag_path = os.path.join(save_dir, f'{prefix}_stream.bag')
 mp4_path = os.path.join(save_dir, f'{prefix}_c.mp4')
 
 config = rs.config()
+config.enable_device(_cam['serial'])  # 複数台接続時に選んだカメラを使う
 config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
 config.enable_stream(rs.stream.depth, W, H, rs.format.z16,  FPS)
 config.enable_record_to_file(bag_path)

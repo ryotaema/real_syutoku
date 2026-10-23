@@ -130,7 +130,8 @@ class _CameraBase:
             keep &= z >= min_depth
         if max_depth is not None:
             keep &= z <= max_depth
-        write_ply(path, xyz[keep], rgb[keep])
+        # 従来の rs.points.export_to_ply（RealSense Viewer 座標系）に合わせて y・z を反転する
+        write_ply(path, xyz[keep] * np.array([1, -1, -1], dtype=np.float32), rgb[keep])
 
 
 # ============================================================================
