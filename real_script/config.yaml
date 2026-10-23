@@ -5,6 +5,7 @@ camera:
   depth_alpha:
     D435: 0.4   # ~637mm で飽和（近距離収集向け）
     D405: ~     # null → フレーム内相対正規化（D405 は距離範囲が狭いため固定 alpha では飽和しやすい）
+    G336: 0.4   # Gemini 336 も depth は mm 単位なので D435 と同じ
     default: 0.4
 
 output:

@@ -1,5 +1,3 @@
-import pyrealsense2 as rs
-import numpy as np
 import cv2
 from ultralytics import YOLO
 import gc
@@ -7,6 +5,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import load_config, build_parser, apply_args, detect_camera
+from camera import open_camera
 
 _args = build_parser(include_model=True).parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -25,28 +24,12 @@ except RuntimeError as e:
     exit(1)
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
-pipeline = rs.pipeline()
-config = rs.config()
-
-pipeline_wrapper = rs.pipeline_wrapper(pipeline)
-pipeline_profile = config.resolve(pipeline_wrapper)
-device = pipeline_profile.get_device()
-
-found_rgb = False
-for s in device.sensors:
-    if s.get_info(rs.camera_info.name) == 'RGB Camera':
-        found_rgb = True
-        break
-if not found_rgb:
-    print("The demo requires Depth camera with Color sensor")
-    exit(0)
-
-config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
-
-pipeline.start(config)
-
-align_to = rs.stream.color
-align = rs.align(align_to)
+camera = open_camera(_cam, W, H, FPS, depth=False)
+try:
+    camera.start()
+except RuntimeError as e:
+    print(e)
+    exit(1)
 
 
 if __name__ == '__main__':
@@ -56,13 +39,11 @@ if __name__ == '__main__':
 
     try:
         while True:
-            frames = pipeline.wait_for_frames()
-            aligned_frames = align.process(frames)
-            color_frame = aligned_frames.get_color_frame()
-            if not color_frame:
+            fr = camera.read()
+            if fr is None:
                 continue
 
-            color_image = np.asanyarray(color_frame.get_data())
+            color_image = fr.color
 
             results = model(color_image, show=False, save=False)
             anotated_image = results[0].plot()
@@ -73,7 +54,6 @@ if __name__ == '__main__':
                 break
 
     finally:
-        pipeline.stop()
+        camera.stop()
         cv2.destroyAllWindows()
-        del color_frame, color_image
         gc.collect()

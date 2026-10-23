@@ -1,7 +1,6 @@
 # ノートPC内蔵GPU(Intel Arc/Iris Xe)をOpenVINOで利用するスクリプト
 
 from openvino.runtime import Core, Tensor
-import pyrealsense2 as rs
 import numpy as np
 import cv2
 import gc
@@ -9,6 +8,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import load_config, build_parser, apply_args, detect_camera
+from camera import open_camera
 
 _args = build_parser(include_model=True, include_conf=True).parse_args()
 _cfg  = apply_args(load_config(), _args, model_key='openvino_path')
@@ -42,15 +42,11 @@ def draw_boxes(image, boxes, color=(0, 255, 0), thickness=2):
         cv2.putText(image, label, (x1, max(y1 - 10, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     return image
 
-def get_realsense_color_frame(pipeline, align):
-    frames = pipeline.wait_for_frames()
-    aligned_frames = align.process(frames)
-    color_frame = aligned_frames.get_color_frame()
-    if not color_frame:
-        return None
-    return np.asanyarray(color_frame.get_data())
+def get_color_frame(camera):
+    fr = camera.read()
+    return None if fr is None else fr.color
 
-# RealSenseの初期化
+# カメラの初期化
 try:
     _cam = detect_camera()
 except RuntimeError as e:
@@ -58,12 +54,12 @@ except RuntimeError as e:
     exit(1)
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
-pipeline = rs.pipeline()
-config = rs.config()
-config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
-
-pipeline.start(config)
-align = rs.align(rs.stream.color)
+camera = open_camera(_cam, W, H, FPS, depth=False)
+try:
+    camera.start()
+except RuntimeError as e:
+    print(e)
+    exit(1)
 
 # OpenVINOモデルのロードとコンパイル
 ie = Core()
@@ -80,7 +76,7 @@ _, _, iH, iW = compiled.input(0).shape
 
 try:
     while True:
-        color = get_realsense_color_frame(pipeline, align)
+        color = get_color_frame(camera)
         if color is None:
             continue
 
@@ -103,6 +99,6 @@ try:
         if cv2.waitKey(1) == ord('q'):
             break
 finally:
-    pipeline.stop()
+    camera.stop()
     cv2.destroyAllWindows()
     gc.collect()

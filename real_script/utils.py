@@ -11,36 +11,34 @@ _CFG_PATH = Path(__file__).parent / "config.yaml"
 _CAMERA_MODELS = {
     'd435': 'D435',
     'd405': 'D405',
+    'gemini 336': 'G336',   # Orbbec Gemini 336
 }
 
 
 def detect_camera():
-    """接続されている最初のRealSenseカメラを検出して返す。
+    """接続されている最初のカメラ（RealSense → Orbbec の順）を検出して返す。
 
     Returns:
-        dict: {'name': str, 'model': str, 'serial': str}
-              model は 'D435' / 'D405' / 'unknown' のいずれか
+        dict: {'name': str, 'model': str, 'serial': str, 'backend': str}
+              model は 'D435' / 'D405' / 'G336' / 'unknown' のいずれか
+              backend は 'realsense' / 'orbbec'（camera.open_camera が使う）
     Raises:
         RuntimeError: デバイスが見つからない場合
     """
-    import pyrealsense2 as rs
-    ctx = rs.context()
-    devices = ctx.query_devices()
-    if len(devices) == 0:
-        raise RuntimeError("RealSenseデバイスが接続されていません")
+    from camera import list_devices
+    devices = list_devices()
+    if not devices:
+        raise RuntimeError("カメラ（RealSense / Orbbec）が接続されていません")
 
-    dev = devices[0]
-    name   = dev.get_info(rs.camera_info.name)
-    serial = dev.get_info(rs.camera_info.serial_number)
-
-    model = 'unknown'
-    name_lower = name.lower()
+    cam = devices[0]
+    cam['model'] = 'unknown'
+    name_lower = cam['name'].lower()
     for key, label in _CAMERA_MODELS.items():
         if key in name_lower:
-            model = label
+            cam['model'] = label
             break
 
-    return {'name': name, 'model': model, 'serial': serial}
+    return cam
 
 
 def get_depth_alpha(cfg, model):
