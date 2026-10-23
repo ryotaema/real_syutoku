@@ -13,6 +13,8 @@ import sys
 import csv
 from pathlib import Path
 from datetime import datetime
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import load_config
 
 try:
     import matplotlib
@@ -25,7 +27,7 @@ except ImportError:
 
 
 def _find_latest_session() -> Path:
-    base = Path.home() / 'annot_labelimg' / 'real_syutoku' / 'data' / 'timelapse_data'
+    base = Path(load_config()['output']['timelapse_dir'])
     # 新構造: timelapse_data/YYYY_MMDD/timelapsN_.../detection_log.csv
     sessions = sorted(base.glob('*/*/detection_log.csv'))
     if not sessions:

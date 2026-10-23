@@ -1,6 +1,6 @@
 # real_syutoku
 
-Intel RealSense カメラを用いた画像取得・アノテーション・推論モデル検証用スクリプト群．
+Intel RealSense / Orbbec カメラを用いた画像取得・アノテーション・推論モデル検証用スクリプト群．
 
 ## ディレクトリ構成
 
@@ -9,6 +9,8 @@ real_syutoku/
 ├── real_script/
 │   ├── config.yaml          # 解像度・FPS・出力先・モデルパスの設定
 │   ├── utils.py             # 共通ユーティリティ（設定読み込み・カメラ検出）
+│   ├── camera.py            # カメラ取得の共通層（RealSense / Orbbec の差を吸収）
+│   ├── gui.py               # 統合GUI（各スクリプトをボタンで起動）
 │   ├── collect/             # 静止画データ収集
 │   ├── record/              # 動画録画
 │   ├── detect/              # リアルタイム推論
@@ -38,21 +40,59 @@ sudo apt install python3-tk
 
 OpenVINOを使う場合は `openvino_env/` の仮想環境を使用してください．
 
+## 使い方（GUI）
+
+はじめての人はまず GUI から使ってください．
+
+```bash
+python3 real_script/gui.py
+```
+
+1. 上の「カメラ」に接続中のカメラが表示されます（2台以上つないでいるときはここで選びます）．
+2. やりたいことのタブ（画像・点群・動画・タイムラプス・推論・アノテーション）を開き，ボタンを押します．
+3. カメラ映像のウィンドウが開いたら，ボタン横の「操作」に書かれたキーで保存・終了します．
+4. 途中でやめたいときは「停止」を押します（データは保存されたまま安全に終了します）．
+5. 「保存先を開く」で，最後に使った機能の保存フォルダが開きます．
+
+GUI は下記のスクリプトをボタンで起動しているだけなので，コマンドラインからの使い方も今までどおりです．
+細かいオプション（解像度・FPS など）を変えたいときはコマンドラインか `config.yaml` を使ってください．
+（OpenVINO 推論と .bag のみの録画 `mp4_collect.py` は GUI には入れていません．）
+
 ## カメラ自動認識
 
-すべてのスクリプトは起動時に接続されているカメラを自動検出し，**D435・D405 どちらでも動作**します．
+すべてのスクリプトは起動時に接続されているカメラを自動検出し，**D435・D405・Gemini 336 のどれでも動作**します．
+
+1台だけつながっていればそのカメラを自動で使います．2台以上つながっている場合は起動時に
+カメラ選択ダイアログが表示されます（画面の無い環境ではターミナルで番号を選びます）．
 
 ```
 使用カメラ: Intel RealSense D435  (シリアル: 12345678)
 ```
 
-| | D435 | D405 |
-|---|---|---|
-| color | ✓ | ✓ |
-| depth | ✓ | ✓ |
-| ir_left / ir_right | ✓ | なし |
-| pointcloud | ✓ | ✓ |
-| 深度カラーマップ | alpha=0.4 固定（~637mm 飽和） | フレーム内相対正規化 |
+| | D435 | D405 | Gemini 336 |
+|---|---|---|---|
+| メーカー / SDK | Intel / pyrealsense2 | Intel / pyrealsense2 | Orbbec / pyorbbecsdk |
+| カメラコード | `d435` | `d405` | `g336` |
+| color | ✓ | ✓ | ✓ |
+| depth | ✓（1単位 = 1mm） | ✓（1単位 = 0.1mm） | ✓（1単位 = 1mm） |
+| ir_left / ir_right | ✓ | なし | ✓ |
+| pointcloud | ✓ | ✓ | ✓ |
+| 深度カラーマップ | alpha=0.4 固定（~637mm 飽和） | フレーム内相対正規化 | alpha=0.4 固定（~637mm 飽和） |
+| 動画録画（`record/`） | ✓ | ✓ | ✓（.bag は Orbbec 独自形式） |
+
+機種によって画質・深度の出方が異なるため，**どのカメラで撮ったかは必ずデータに残ります**．
+ファイル名・セッションディレクトリ名の先頭がカメラコード（[データ命名規則](#データ命名規則)）になり，
+`metadata.json` の `camera` に機種名・型番・シリアル番号・SDK・解像度・FPS・depth の単位が記録されます．
+
+```json
+"camera": {
+  "name": "Orbbec Gemini 336", "model": "G336", "serial": "CP9KB530001A",
+  "backend": "orbbec", "resolution": [640, 480], "fps": 30, "depth_scale": 0.001
+}
+```
+
+点群（.ply）は機種によらず RealSense Viewer と同じ座標系（y・z 反転，単位 m）で保存されるので，
+どのカメラで撮った点群も同じように扱えます．
 
 D405 接続時は IR ストリームを無効化し，color と depth のみを収集します．深度カラーマップは D435 が絶対距離を色で表す固定 alpha 方式，D405 がフレーム内の最近〜最遠を 0〜255 に正規化する相対方式に自動切り替えされます（D405 は距離レンジが狭く固定 alpha では飽和しやすいため）．
 
@@ -68,17 +108,23 @@ camera:
   depth_alpha:
     D435: 0.4   # ~637mm で飽和
     D405: ~     # null → フレーム内相対正規化
+    G336: 0.4   # Gemini 336 も depth は mm 単位
     default: 0.4
 
-output:
-  images_dir: ~/annot_labelimg/real_syutoku/data/images
-  mp4_dir: ~/annot_labelimg/real_syutoku/data/mp4
+output:                  # config.yaml からの相対パス（~ や絶対パスも可）
+  images_dir: ../data/images
+  pointcloud_dir: ../data/pointcloud
+  timelapse_dir: ../data/timelapse_data
+  mp4_dir: ../data/mp4
 
 model:
   yolo_path: model/260217_pepper_yolov11x_aug.pt
   openvino_path: model/250626_weights/openvino_model/best.xml
   confidence_threshold: 0.3
 ```
+
+出力先は既定でリポジトリ内の `data/` です（`config.yaml` からの相対パスなので，リポジトリをどこに clone しても
+そのリポジトリの `data/` に保存されます）．クリック座標データは `images_dir` と同じ階層の `click_test_data/` に保存されます．
 
 ## データ命名規則
 
@@ -99,7 +145,7 @@ d435_260707_101741_00042_c.jpg
 
 | 要素 | 説明 |
 |------|------|
-| `cam` | `d435` / `d405`（自動判別）．nyx660_syutoku 側は `nyx` を使うため，リポジトリを跨いでも衝突しません |
+| `cam` | `d435` / `d405` / `g336`（自動判別）．nyx660_syutoku 側は `nyx` を使うため，リポジトリを跨いでも衝突しません．未登録の機種は `unk` になります（起動時に警告） |
 | `YYMMDD` | 取得日 |
 | `HHMMSS` | セッション開始時刻．1プロセス＝1セッションで固定です |
 | `NNNNN` | セッション内のショット連番．**同一ショットの color/depth/ir は同じ番号を共有します** |
@@ -193,6 +239,7 @@ python3 tools/rename_legacy.py data/click_test_data/250911_testdata_click --cam 
 | `--width N` | collect / record / detect | `--width 1280` |
 | `--height N` | collect / record / detect | `--height 720` |
 | `--tag NAME` | collect / click_script | `--tag greenhouse`（セッションディレクトリ名にのみ付与） |
+| `--serial SERIAL` | collect / record / detect / click_dataset | `--serial CP9KB530001A`（複数台接続時に使うカメラを指定．省略時は選択ダイアログ） |
 | `--model PATH` | record_with_yolo / detect | `--model /path/to/model.pt` |
 | `--conf F` | vino_yolo_detection / timelapse_detect（--detect 時） | `--conf 0.5` |
 | `--interval N` | timelapse_detect | `--interval 300` |
@@ -214,10 +261,10 @@ python3 detect/vino_yolo_detection_D435.py --conf 0.5
 ### データ収集
 
 ```bash
-# Enter で収集開始，q で停止（D435/D405 両対応）
+# Enter で収集開始，q で停止
 python3 collect/dataset_collect.py
 
-# 点群（.ply）付き収集（D435/D405 両対応）
+# 点群（.ply）付き収集
 python3 collect/dataset_point_collect.py
 
 # ICP 用点群データ収集（intrinsics.json + 生深度付き）
@@ -225,7 +272,7 @@ python3 collect/pointcloud_capture.py                  # auto: 50フレーム自
 python3 collect/pointcloud_capture.py --frames 100     # フレーム数指定
 python3 collect/pointcloud_capture.py --mode manual    # manual: [s]で1枚ずつ取得
 
-# 1枚ずつ保存（s で保存，q で終了）（D435/D405 両対応）
+# 1枚ずつ保存（s で保存，q で終了）
 python3 collect/dataset_collect_photo.py
 ```
 
@@ -235,12 +282,12 @@ python3 collect/dataset_collect_photo.py
 
 ```
 images_dir/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/
-├── color/          {prefix}_{NNNNN}_c.jpg     # カラー画像（D435/D405 共通）
-├── depth_colormap/ {prefix}_{NNNNN}_dc.jpg    # 深度カラーマップ（D435/D405 共通）
-├── ir_left/        {prefix}_{NNNNN}_i1.jpg    # IR 左（D435 のみ）
-├── ir_right/       {prefix}_{NNNNN}_i2.jpg    # IR 右（D435 のみ）
-├── ir_left_color/  {prefix}_{NNNNN}_i1c.jpg   # IR 左カラーマップ（D435 のみ）
-├── ir_right_color/ {prefix}_{NNNNN}_i2c.jpg   # IR 右カラーマップ（D435 のみ）
+├── color/          {prefix}_{NNNNN}_c.jpg     # カラー画像（全機種共通）
+├── depth_colormap/ {prefix}_{NNNNN}_dc.jpg    # 深度カラーマップ（全機種共通）
+├── ir_left/        {prefix}_{NNNNN}_i1.jpg    # IR 左（D405 以外）
+├── ir_right/       {prefix}_{NNNNN}_i2.jpg    # IR 右（D405 以外）
+├── ir_left_color/  {prefix}_{NNNNN}_i1c.jpg   # IR 左カラーマップ（D405 以外）
+├── ir_right_color/ {prefix}_{NNNNN}_i2c.jpg   # IR 右カラーマップ（D405 以外）
 └── metadata.json                              # カメラ設定・撮影枚数
 ```
 
@@ -250,7 +297,7 @@ images_dir/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/
 
 ### 定点タイムラプス撮影
 
-植物などの定点観察・時系列データ収集向けスクリプトです．5分間隔・12時間などの長時間無人撮影を想定しています．D435/D405 両対応で，D405 接続時は IR を除いた color と depth のみを保存します．
+植物などの定点観察・時系列データ収集向けスクリプトです．5分間隔・12時間などの長時間無人撮影を想定しています．全機種対応で，D405 接続時は IR を除いた color と depth のみを保存します．
 
 ```bash
 # 基本（5分ごとに保存）
@@ -273,8 +320,8 @@ timelapse_data/YYMMDD/{cam}_{YYMMDD}_{HHMMSS}/
 ├── color/          {prefix}_{NNNNN}_c.jpg     # カラー画像
 ├── depth/          {prefix}_{NNNNN}_d.png     # 16bit 生深度
 ├── depth_colormap/ {prefix}_{NNNNN}_dc.jpg    # 深度可視化
-├── ir_left/        {prefix}_{NNNNN}_i1.jpg    # IR 左（D435 のみ）
-├── ir_right/       {prefix}_{NNNNN}_i2.jpg    # IR 右（D435 のみ）
+├── ir_left/        {prefix}_{NNNNN}_i1.jpg    # IR 左（D405 以外）
+├── ir_right/       {prefix}_{NNNNN}_i2.jpg    # IR 右（D405 以外）
 ├── annotated/      {prefix}_{NNNNN}_det.jpg   # BBOX付き（--detect 時のみ）
 ├── detection_log.csv                          # 検出結果ログ（--detect 時のみ）
 └── metadata.json                              # 撮影間隔・継続時間・カメラ設定
@@ -298,7 +345,19 @@ python3 process/timelapse_analysis.py data/timelapse_data/2026_0624/timelapse1_2
 
 ### 動画録画
 
-D435/D405 両対応です．D405 接続時は IR ストリームを除いて録画します．
+全機種対応です．D405 接続時は IR ストリームを除いて録画します．
+
+`.bag` は SDK ごとの形式で保存されます（RealSense の `.bag` と Orbbec の `.bag` は互換性がなく，
+RealSense Viewer で Orbbec の `.bag` は開けません）．`convert_bag_to_mp4.py` はどちらの形式かを
+自動で判別し，解像度・FPS も録画時の値を `.bag` から読み取ります．
+
+```
+mp4_dir/
+├── {cam}_{YYMMDD}_{HHMMSS}_stream.bag   # 生データ（color / depth / IR）
+├── {cam}_{YYMMDD}_{HHMMSS}_c.mp4        # カラー動画（record_realsense）
+├── {cam}_{YYMMDD}_{HHMMSS}_det.mp4      # YOLO 描画済み動画（record_with_yolo）
+└── {cam}_{YYMMDD}_{HHMMSS}_stream.mp4   # convert_bag_to_mp4 の出力
+```
 
 ```bash
 # .bag 形式で録画（終了後に変換コマンドが表示されます）
@@ -388,6 +447,18 @@ Intel RealSense SDK (librealsense) を使用しています．
 ```bash
 pip install pyrealsense2
 ```
+
+## Orbbec セットアップ（Gemini 336）
+
+Orbbec SDK v2 の Python バインディング（pyorbbecsdk）を使用しています．
+公式リポジトリ: https://github.com/orbbec/pyorbbecsdk
+
+```bash
+pip install pyorbbecsdk2
+```
+
+初めて使う PC では udev ルールの設定が必要です（pyorbbecsdk リポジトリの `scripts/env_setup/install_udev_rules.sh`）．
+pyrealsense2 / pyorbbecsdk は使う方だけ入っていれば動きます．
 
 ## ライセンス
 

@@ -1,13 +1,12 @@
 #テストdataを収集するために画像と対象の座標
 
-import pyrealsense2 as rs
-import numpy as np
 import cv2
 import gc
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code
+from utils import load_config, build_parser, apply_args, detect_camera, Session, cam_code, camera_metadata
+from camera import open_camera
 
 _args = build_parser().parse_args()
 _cfg  = apply_args(load_config(), _args)
@@ -18,7 +17,7 @@ FPS = _cfg['camera']['fps']
 
 # --- カメラ検出 ---
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     sys.exit(1)
@@ -40,12 +39,13 @@ def mouse_callback(event, x, y, flags, param):
         print(f"クリック: ({x}, {y})")
         cv2.circle(current_frame, (x, y), 5, (0, 255, 0), -1)
 
-# RealSense設定
-pipeline = rs.pipeline()
-config = rs.config()
-config.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)#size
-
-pipeline.start(config)
+# カメラ設定
+camera = open_camera(_cam, W, H, FPS, depth=False)
+try:
+    camera.start()
+except RuntimeError as e:
+    print(e)
+    sys.exit(1)
 print("マウスで検出対象をクリックしてください。's' で保存、'q' で終了")
 
 cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
@@ -55,13 +55,11 @@ shot_count = 0
 
 try:
     while True:
-        frames = pipeline.wait_for_frames()
-        color_frame = frames.get_color_frame()
-
-        if not color_frame:
+        fr = camera.read()
+        if fr is None:
             continue
 
-        color_image = np.asanyarray(color_frame.get_data())
+        color_image = fr.color
         current_frame = color_image.copy()
 
         # 前にクリックされた点を再描画
@@ -91,11 +89,10 @@ try:
 
 finally:
     session.write_metadata(
-        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
-                'resolution': [W, H], 'fps': FPS},
+        camera=camera_metadata(_cam, W, H, FPS, camera),
         modalities=['color', 'points'],
         shot_count=shot_count,
     )
-    pipeline.stop()
+    camera.stop()
     cv2.destroyAllWindows()
     gc.collect()

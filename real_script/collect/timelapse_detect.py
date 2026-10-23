@@ -1,4 +1,3 @@
-import pyrealsense2 as rs
 import numpy as np
 import cv2
 import csv
@@ -9,7 +8,8 @@ from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
-                   make_depth_colormap, Session, cam_code)
+                   make_depth_colormap, Session, cam_code, camera_metadata)
+from camera import open_camera
 
 WARMUP_SECS = 2.0  # AE安定待ち（フレーム数でなく秒数で管理）
 
@@ -41,7 +41,7 @@ TOTAL_SHOTS = TOTAL_SEC // INTERVAL
 
 # ── カメラ検出 ───────────────────────────────────────────────────────────────
 try:
-    _cam = detect_camera()
+    _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
     sys.exit(1)
@@ -82,8 +82,7 @@ if _args.detect:
         print(f"モデル読み込み: {_model_path}")
 
 # ── 出力先 ──────────────────────────────────────────────────────────────────
-_images_base    = Path(os.path.expanduser(_cfg['output']['images_dir']))
-_timelapse_base = _images_base.parent / 'timelapse_data'
+_timelapse_base = _cfg['output']['timelapse_dir']
 
 _mods = ['color', 'depth', 'depth_colormap']
 if _has_ir:
@@ -96,22 +95,18 @@ session_dir = session.dir
 if _args.detect:
     log_path = session_dir / 'detection_log.csv'
 
-# ── RealSense 初期化 ─────────────────────────────────────────────────────────
-pipeline = rs.pipeline()
-rs_cfg   = rs.config()
-rs_cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
-rs_cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16,  FPS)
-if _has_ir:
-    rs_cfg.enable_stream(rs.stream.infrared, 1, W, H, rs.format.y8, FPS)
-    rs_cfg.enable_stream(rs.stream.infrared, 2, W, H, rs.format.y8, FPS)
-pipeline.start(rs_cfg)
+# ── カメラ初期化 ─────────────────────────────────────────────────────────────
+camera = open_camera(_cam, W, H, FPS, ir=_has_ir)
+try:
+    camera.start()
+except RuntimeError as e:
+    print(e)
+    sys.exit(1)
 
 print(f"オートエクスポージャ安定待ち（{WARMUP_SECS}秒）...")
 _warmup_end = time.time() + WARMUP_SECS
 while time.time() < _warmup_end:
-    pipeline.wait_for_frames()
-
-align = rs.align(rs.stream.color)
+    camera.read()
 
 # ── CSV ヘッダー（--detect 時のみ）───────────────────────────────────────────
 if log_path:
@@ -127,16 +122,13 @@ print(f"YOLO検出  : {'有効（信頼度閾値 ' + str(CONF) + '）' if _args.
 
 
 def _capture(shot_idx: int, start: float) -> bool:
-    frames  = pipeline.wait_for_frames()
-    aligned = align.process(frames)
-    cf = aligned.get_color_frame()
-    df = aligned.get_depth_frame()
-    if not cf or not df:
+    fr = camera.read()
+    if fr is None:
         print(f"[警告] フレーム欠落（shot {shot_idx}）- スキップ")
         return False
 
-    color_img = np.asanyarray(cf.get_data())
-    depth_img = np.asanyarray(df.get_data())
+    color_img = fr.color
+    depth_img = fr.depth
     # --relative-depth または D405（_depth_alpha=None）は相対正規化
     depth_vis = make_depth_colormap(depth_img, None if _args.relative_depth else _depth_alpha)
 
@@ -147,12 +139,9 @@ def _capture(shot_idx: int, start: float) -> bool:
     }
 
     if _has_ir:
-        # IRはalign前のフレームから取得（元解像度・純粋なIR画像）
-        ir1 = frames.get_infrared_frame(1)
-        ir2 = frames.get_infrared_frame(2)
-        if ir1 and ir2:
-            writes[session.path(shot_idx, 'ir_left')]  = np.asanyarray(ir1.get_data())
-            writes[session.path(shot_idx, 'ir_right')] = np.asanyarray(ir2.get_data())
+        # IRはalign前のフレーム（元解像度・純粋なIR画像）
+        writes[session.path(shot_idx, 'ir_left')]  = fr.ir_left
+        writes[session.path(shot_idx, 'ir_right')] = fr.ir_right
 
     write_ok = True
     for path, img in writes.items():
@@ -215,15 +204,12 @@ try:
                 print(f"\n予定 {TOTAL_SHOTS} 枚完了。終了します。")
                 break
         else:
-            try:
-                pipeline.wait_for_frames(timeout_ms=200)
-            except RuntimeError:
+            if camera.read(timeout_ms=200) is None:
                 time.sleep(0.05)
 
 finally:
     session.write_metadata(
-        camera={'name': _cam['name'], 'model': _cam['model'], 'serial': _cam['serial'],
-                'resolution': [W, H], 'fps': FPS},
+        camera=camera_metadata(_cam, W, H, FPS, camera),
         modalities=_mods,
         shot_count=save_count,
         timelapse={'interval_sec': INTERVAL, 'duration_hour': _args.duration,
@@ -231,5 +217,5 @@ finally:
         detect={'enabled': bool(_args.detect), 'model': _model_path if _args.detect else None,
                 'conf': CONF} if _args.detect else None,
     )
-    pipeline.stop()
+    camera.stop()
     print(f"\n完了。試行 {shot_count} 枚 / 保存成功 {save_count} 枚。ログ: {log_path or 'なし'}")
