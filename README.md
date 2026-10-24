@@ -8,6 +8,7 @@ Intel RealSense / Orbbec カメラを用いた画像取得・アノテーショ�
 real_syutoku/
 ├── real_script/
 │   ├── config.yaml          # 解像度・FPS・出力先・モデルパスの設定
+│   ├── config.local.yaml.example  # 環境ごとの上書き設定の例（config.local.yaml にコピーして使う）
 │   ├── utils.py             # 共通ユーティリティ（設定読み込み・カメラ検出）
 │   ├── camera.py            # カメラ取得の共通層（RealSense / Orbbec の差を吸収）
 │   ├── gui.py               # 統合GUI（各スクリプトをボタンで起動）
@@ -230,13 +231,30 @@ output:                  # config.yaml からの相対パス（~ や絶対パス
   mp4_dir: ../data/mp4
 
 model:
-  yolo_path: model/260217_pepper_yolov11x_aug.pt
+  yolo_path: model/best.pt
   openvino_path: model/250626_weights/openvino_model/best.xml
   confidence_threshold: 0.3
 ```
 
 出力先は既定でリポジトリ内の `data/` です（`config.yaml` からの相対パスなので，リポジトリをどこに clone しても
 そのリポジトリの `data/` に保存されます）．クリック座標データは `images_dir` と同じ階層の `click_test_data/` に保存されます．
+
+### 環境ごとの設定（config.local.yaml）
+
+手元のモデル名や保存先など，自分の環境だけで変えたい値は `config.yaml` を直接編集せず，
+`real_script/config.local.yaml` に書いてください．このファイルは git 管理外で，存在すれば `config.yaml` にキー単位で上書きされます．
+
+```bash
+cp real_script/config.local.yaml.example real_script/config.local.yaml
+```
+
+```yaml
+# real_script/config.local.yaml（変えたいキーだけを書く）
+model:
+  yolo_path: model/my_model.pt
+```
+
+優先順位は「CLI オプション > `config.local.yaml` > `config.yaml`」です．相対パスの基準は `config.yaml` と同じ `real_script/` です．
 
 ## データ命名規則
 

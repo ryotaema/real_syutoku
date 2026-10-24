@@ -9,3 +9,6 @@ __pycache__/
 
 # Orbbec SDK のログ（camera.py では抑止しているが SDK 単体で動かした場合に出る）
 Log/
+
+# 環境ごとの上書き設定（config.local.yaml.example を参照）
+real_script/config.local.yaml

@@ -17,7 +17,7 @@ output:
 
 model:
   # real_script/ からの相対パス
-  yolo_path: model/260217_pepper_yolov11x_aug.pt
+  yolo_path: model/best.pt
   openvino_path: model/250626_weights/openvino_model/best.xml
   confidence_threshold: 0.3
 

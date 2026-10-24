@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 
 _CFG_PATH = Path(__file__).parent / "config.yaml"
+# 環境ごとの上書き設定（git 管理外）．存在すれば config.yaml に深くマージする
+_LOCAL_CFG_PATH = Path(__file__).parent / "config.local.yaml"
 
 # 対応モデル名のキーワード（小文字で比較）
 _CAMERA_MODELS = {
@@ -173,9 +175,22 @@ def make_depth_colormap(depth_image, alpha):
     return cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=alpha), cv2.COLORMAP_JET)
 
 
+def _deep_merge(base, override):
+    """override の値で base を再帰的に上書きする（dict 同士はキー単位でマージ）．"""
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
 def load_config():
     with open(_CFG_PATH) as f:
         cfg = yaml.safe_load(f)
+    if _LOCAL_CFG_PATH.exists():
+        with open(_LOCAL_CFG_PATH) as f:
+            _deep_merge(cfg, yaml.safe_load(f) or {})
     # output のパス: ~展開 → 相対パスなら config.yaml 基準で解決（nyx660_syutoku と同じ）
     for key, p in cfg['output'].items():
         p = os.path.expanduser(p)
