@@ -117,6 +117,59 @@ GUI は下記のスクリプトをボタンで起動しているだけなので�
 細かいオプション（解像度・FPS など）を変えたいときはコマンドラインか `config.yaml` を使ってください．
 （OpenVINO 推論と .bag のみの録画 `mp4_collect.py` は GUI には入れていません．）
 
+### RGB・深度・IR・PLYの一括取得
+
+「画像」タブの **全データを1枚取得** は，約2秒の露光安定待ちの後に1ショット分を保存して終了します．
+**全データを1枚ずつ撮る** はプレビューを開き，`s` を押すたびに同じ組のデータを保存します（`q` で終了）．
+従来の `dataset_collect_photo.py` からも，画像とPLYをまとめて保存できます．ROSは不要です．
+
+保存先は `config.yaml` の `output.images_dir` 配下です．各ファイルは同じショット番号を共有します．
+RGBは既存の処理用JPEGとロスレスPNGの両方を保存し，深度・IRの生データもPNGで残します．
+メタデータの `frames[].files` に，そのショットの各ファイルの相対パスが入ります．
+
+| データ | 保存先 | 内容 |
+|---|---|---|
+| RGB | `color/*_c.jpg` | 既存の収集画像と同じJPEG |
+| RGB（ロスレス） | `color_raw/*_cr.png` | 取得画素を保持したPNG |
+| 深度 | `depth/*_d.png` | 16bit PNG．距離は画素値 × `metadata.camera.depth_scale` [m] |
+| 深度可視化 | `depth_colormap/*_dc.jpg` | プレビュー用の疑似カラー画像 |
+| 位置合わせ前の深度 | `depth_raw/*_dr.png` | ネイティブの深度座標系・解像度を保持 |
+| 左右IR | `ir_left/*_i1.png` / `ir_right/*_i2.png` | 対応機種のみ，8bit PNG |
+| IR可視化 | `ir_left_color/*_i1c.jpg` / `ir_right_color/*_i2c.jpg` | 左右IRの疑似カラー画像 |
+| 点群 | `pointcloud/*_pc.ply` | 無効深度を除いた点群．単位m，RealSense Viewer座標系（x右・y上・前方−z） |
+| カメラ情報 | `intrinsics.json` / `camera_settings.json` | 内部パラメータ・撮影設定 |
+| 取得記録 | `metadata.json` | 機種・シリアル番号・保存ファイル・フレーム番号・取得時刻・画像サイズ |
+
+D435・Gemini 336では左右IRも保存します．D405はIR非対応のため，
+`unavailable_modalities` にその旨を記録し，対応するRGB・深度・PLYを保存します．
+`depth/` はカラー座標系に位置合わせ済み，`depth_raw/` は位置合わせ前です．
+`calibration.json` にネイティブの内部・外部パラメータも保存します．
+PLYはRGB付きで，距離による追加の切り捨ては行いません．
+
+コマンドラインでは，リポジトリのルートから次のように実行できます．
+
+```bash
+# 1ショット分の全データを保存して終了（GUIの「全データを1枚取得」と同じ）
+python3 real_script/collect/dataset_collect_photo.py --once
+
+# sで全データを1組ずつ保存，qで終了
+python3 real_script/collect/dataset_collect_photo.py
+
+# 画面を使わず1ショット保存．待ち時間は任意に変更できる
+python3 real_script/collect/dataset_collect_photo.py --once --no-preview --warmup 2
+```
+
+必要なフレームが揃わない場合は既定で10秒後にエラーにします（`--timeout` で変更可）．
+画像とPLYの保存が完了したショットだけを撮影枚数に数えます．
+既存の同名ファイルは上書きせず，同じ秒に別セッションを開始する場合も保存先を分けます．
+
+保存処理と模擬カメラによるテストは，カメラを接続せずに実行できます．
+
+```bash
+python3 -m unittest discover -s tests -p test_snapshot.py
+```
+
+
 ## カメラ自動認識
 
 すべてのスクリプトは起動時に接続されているカメラを自動検出し，**D435・D405・Gemini 336 のどれでも動作**します．

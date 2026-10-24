@@ -1,106 +1,104 @@
-import numpy as np
-import cv2
-import gc
+"""RGB・深度・IR・PLYを、[s] または --once で同時保存する。"""
+import json
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import cv2
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils import (load_config, build_parser, apply_args, detect_camera, get_depth_alpha,
-                   make_depth_colormap, Session, cam_code, camera_metadata)
+                   make_depth_colormap, cam_code, camera_metadata)
 from camera import open_camera
+from snapshot import create_session, save_frame_bundle, preview_grid
 
-_args = build_parser().parse_args()
-_cfg  = apply_args(load_config(), _args)
 
-W   = _cfg['camera']['width']
-H   = _cfg['camera']['height']
-FPS = _cfg['camera']['fps']
+def main():
+    parser = build_parser()
+    parser.add_argument('--once', action='store_true', help='ウォームアップ後、全データを1枚保存して終了')
+    parser.add_argument('--warmup', type=float, default=2.0, help='露光安定待ち時間（秒、既定2）')
+    parser.add_argument('--timeout', type=float, default=10.0, help='必要なフレームの取得待ち上限（秒）')
+    parser.add_argument('--no-preview', action='store_true', help='--once時に画面を表示しない')
+    args = parser.parse_args()
+    if args.warmup < 0 or args.timeout <= 0 or (args.no_preview and not args.once):
+        parser.error('warmupは0以上、timeoutは正の値、no-previewはonceと併用してください')
+    cfg = apply_args(load_config(), args)
+    window = 'RealSense'
+    camera = session = None
+    started = False
+    frames_meta = []
+    metadata = {'shot_count': 0, 'frames': frames_meta}
+    error = None
+    try:
+        if not args.no_preview:
+            # SDKより先にHighGUIを初期化する（Qtとストリーム開始順の競合を避ける）。
+            cv2.namedWindow(window, cv2.WINDOW_AUTOSIZE)
+            cv2.waitKey(1)
+        info = detect_camera(args.serial)
+        has_ir = info['model'] != 'D405'
+        width, height, fps = (cfg['camera'][key] for key in ('width', 'height', 'fps'))
+        alpha = get_depth_alpha(cfg, info['model'])
+        camera = open_camera(info, width, height, fps, ir=has_ir)
+        camera.start()
+        started = True
+        session = create_session(cfg['output']['images_dir'], cam_code(info['model']), args.tag)
+        print(f'保存先: {session.dir}', flush=True)
+        print('RGB・深度・IR・PLYを保存します。[s] 保存  [q] 終了', flush=True)
+        begin = last_frame = time.monotonic()
+        while True:
+            frame = camera.read(timeout_ms=1000)
+            key = -1
+            if frame is None:
+                if not args.no_preview and cv2.waitKey(1) & 0xff == ord('q'):
+                    break
+                if time.monotonic() - last_frame > args.timeout:
+                    raise RuntimeError('RGB・深度・対応IRのフレームを取得できません。接続と設定を確認してください。')
+                continue
+            last_frame = time.monotonic()
+            depth_cm = make_depth_colormap(frame.depth, alpha)
+            if not args.no_preview:
+                preview = preview_grid(frame.color, depth_cm, [frame.ir_left, frame.ir_right])
+                cv2.putText(preview, f'[s] Save all  [q] Quit   Saved: {len(frames_meta)}',
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.imshow(window, preview)
+                key = cv2.waitKey(1) & 0xff
+                if key == ord('q'):
+                    break
+            if time.monotonic() - begin < args.warmup:
+                continue
+            if args.once or key == ord('s'):
+                if not frames_meta:
+                    (session.dir / 'intrinsics.json').write_text(json.dumps(camera.intrinsics(), indent=2))
+                    (session.dir / 'calibration.json').write_text(json.dumps(camera.calibration(), indent=2))
+                    (session.dir / 'camera_settings.json').write_text(json.dumps(cfg['camera'], indent=2))
+                record = save_frame_bundle(session, len(frames_meta) + 1, camera, frame, depth_cm)
+                record['saved_at'] = datetime.now(timezone.utc).isoformat()
+                frames_meta.append(record)
+                metadata.update(camera=camera_metadata(info, width, height, fps, camera),
+                                modalities=list(record['files']), shot_count=len(frames_meta), frames=frames_meta,
+                                ply_format={'unit': 'm', 'axes': 'realsense_viewer', 'color': True},
+                                depth_aligned_to='color', depth_raw_aligned=False,
+                                unavailable_modalities=[] if has_ir else ['ir_left', 'ir_right'])
+                session.write_metadata(**metadata)
+                print(f'[{len(frames_meta)}枚目] 全データ保存完了（PLY含む）', flush=True)
+                if args.once:
+                    break
+    except Exception as exc:  # CLIの境界で失敗を記録し、カメラはfinallyで解放する。
+        error = f'{type(exc).__name__}: {exc}'
+        print(f'エラー: {exc}', file=sys.stderr, flush=True)
+    finally:
+        try:
+            if session is not None:
+                session.write_metadata(**metadata, error=error)
+        finally:
+            try:
+                if started:
+                    camera.stop()
+            finally:
+                if not args.no_preview:
+                    cv2.destroyAllWindows()
+    return 1 if error else 0
 
-print("\nストリーミング準備中...")
 
-# --- 2. カメラの初期化 ---
-try:
-    _cam = detect_camera(_args.serial)
-except RuntimeError as e:
-    print(f"エラー: {e}")
-    exit(1)
-print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
-_has_ir      = (_cam['model'] != 'D405')
-_depth_alpha = get_depth_alpha(_cfg, _cam['model'])
-
-_mods = ['color', 'depth_colormap']
-if _has_ir:
-    _mods += ['ir_left', 'ir_right', 'ir_left_color', 'ir_right_color']
-
-session = Session(_cfg['output']['images_dir'], cam_code(_cam['model']),
-                  tag=_args.tag, subdirs=_mods)
-print(f"画像を {session.dir} に保存します")
-
-camera = open_camera(_cam, W, H, FPS, ir=_has_ir)
-try:
-    camera.start()
-except RuntimeError as e:
-    print(e)
-    exit(1)
-
-shot_count = 0
-
-# --- 3. メインループ ---
-try:
-    print("\n[s] キー : 画像を1枚保存")
-    print("[q] キー : 終了\n")
-
-    while True:
-        fr = camera.read()
-        if fr is None:
-            continue
-
-        color_image    = fr.color
-        depth_colormap = make_depth_colormap(fr.depth, _depth_alpha)
-
-        if _has_ir:
-            ir_image1    = fr.ir_left
-            ir_image2    = fr.ir_right
-            ir_colormap1 = cv2.applyColorMap(cv2.convertScaleAbs(ir_image1), cv2.COLORMAP_JET)
-            ir_colormap2 = cv2.applyColorMap(cv2.convertScaleAbs(ir_image2), cv2.COLORMAP_JET)
-            preview = np.vstack((
-                np.hstack((ir_colormap1, ir_colormap2)),
-                np.hstack((color_image,  depth_colormap))
-            ))
-        else:
-            preview = np.hstack((color_image, depth_colormap))
-
-        cv2.putText(preview, f"[s] Save  [q] Quit   Saved: {shot_count}",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-        cv2.imshow('RealSense', preview)
-
-        key = cv2.waitKey(1) & 0xFF
-
-        if key == ord('s'):
-            shot_count += 1
-
-            cv2.imwrite(session.path(shot_count, 'color'),          color_image)
-            cv2.imwrite(session.path(shot_count, 'depth_colormap'), depth_colormap)
-
-            if _has_ir:
-                cv2.imwrite(session.path(shot_count, 'ir_left'),        ir_image1)
-                cv2.imwrite(session.path(shot_count, 'ir_right'),       ir_image2)
-                cv2.imwrite(session.path(shot_count, 'ir_left_color'),  ir_colormap1)
-                cv2.imwrite(session.path(shot_count, 'ir_right_color'), ir_colormap2)
-
-            print(f"[{shot_count}枚目保存] {session.name(shot_count, 'color')}")
-
-        elif key == ord('q'):
-            print(f"\n終了します。合計 {shot_count} 枚保存しました。")
-            break
-
-finally:
-    print("ストリーミングを停止し、リソースを解放します。")
-    session.write_metadata(
-        camera=camera_metadata(_cam, W, H, FPS, camera),
-        modalities=_mods,
-        shot_count=shot_count,
-    )
-    camera.stop()
-    cv2.destroyAllWindows()
-    gc.collect()
+if __name__ == '__main__':
+    sys.exit(main())

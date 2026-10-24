@@ -241,6 +241,9 @@ def apply_args(cfg, args, model_key='yolo_path'):
 # （キーがそのままセッション配下のサブディレクトリ名になる）
 MOD_CODES = {
     'color':          'c',
+    'color_raw':      'cr',    # ロスレスPNG
+    'depth_raw':      'dr',    # 位置合わせ前の深度
+    'ir_color':       'i1c',
     'depth':          'd',      # 16bit raw（png）
     'depth_colormap': 'dc',
     'ir':             'i1',     # 単眼IR（NYX660）

@@ -22,11 +22,14 @@ import numpy as np
 class Frames:
     """1ショット分のフレーム。取得していないストリームは None。"""
 
-    def __init__(self, color=None, depth=None, ir_left=None, ir_right=None, raw=None):
+    def __init__(self, color=None, depth=None, ir_left=None, ir_right=None, raw=None,
+                 depth_raw=None, metadata=None):
         self.color    = color
         self.depth    = depth
         self.ir_left  = ir_left
         self.ir_right = ir_right
+        self.depth_raw = depth_raw
+        self.metadata = metadata or {}
         self._raw     = raw     # バックエンド固有のフレーム（点群計算用）
 
 
@@ -225,20 +228,43 @@ class _RealSenseCamera(_CameraBase):
             cf = aligned.get_color_frame()
             if not cf:
                 return None
-            fr.color = np.asanyarray(cf.get_data())
+            fr.color = np.asanyarray(cf.get_data()).copy()
+            fr.metadata['color'] = {'timestamp_ms': cf.get_timestamp(), 'frame_number': cf.get_frame_number()}
         if self.use_depth:
             df = aligned.get_depth_frame()
             if not df:
                 return None
-            fr.depth = np.asanyarray(df.get_data())
+            fr.depth = np.asanyarray(df.get_data()).copy()
+            native_depth = frames.get_depth_frame()
+            fr.depth_raw = np.asanyarray(native_depth.get_data()).copy()
+            fr.metadata['depth'] = {'timestamp_ms': native_depth.get_timestamp(),
+                                    'frame_number': native_depth.get_frame_number()}
         if self.use_ir:
             # IR は位置合わせ前のフレームから取る（元解像度・純粋な IR 画像）
             ir1, ir2 = frames.get_infrared_frame(1), frames.get_infrared_frame(2)
             if not ir1 or not ir2:
                 return None
-            fr.ir_left  = np.asanyarray(ir1.get_data())
-            fr.ir_right = np.asanyarray(ir2.get_data())
+            fr.ir_left  = np.asanyarray(ir1.get_data()).copy()
+            fr.ir_right = np.asanyarray(ir2.get_data()).copy()
+            for name, frame in [('ir_left', ir1), ('ir_right', ir2)]:
+                fr.metadata[name] = {'timestamp_ms': frame.get_timestamp(), 'frame_number': frame.get_frame_number()}
         return fr
+
+    def calibration(self):
+        color_profile = self._profile.get_stream(self._rs.stream.color)
+        streams = {}
+        for profile in self._profile.get_streams():
+            video = profile.as_video_stream_profile()
+            intr = video.get_intrinsics()
+            extr = profile.get_extrinsics_to(color_profile)
+            name = str(profile.stream_type()) + '_' + str(profile.stream_index())
+            streams[name] = {
+                'width': intr.width, 'height': intr.height,
+                'fx': intr.fx, 'fy': intr.fy, 'ppx': intr.ppx, 'ppy': intr.ppy,
+                'model': str(intr.model), 'coeffs': list(intr.coeffs),
+                'to_color': {'rotation': list(extr.rotation), 'translation_m': list(extr.translation)},
+            }
+        return {'color': self.intrinsics(), 'streams': streams, 'depth_scale': self.depth_scale}
 
     def intrinsics(self):
         intr = (self._profile.get_stream(self._rs.stream.color)
@@ -321,11 +347,16 @@ class _OrbbecCamera(_CameraBase):
             if cf is None:
                 return None
             fr.color = self._image(cf, np.uint8, 3)
+            fr.metadata['color'] = {'timestamp_us': int(cf.get_timestamp_us()), 'frame_number': int(cf.get_index())}
         if self.use_depth:
             df = aligned.get_depth_frame()
             if df is None:
                 return None
             fr.depth = self._image(df, np.uint16)
+            native_depth = frames.get_depth_frame()
+            fr.depth_raw = self._image(native_depth, np.uint16)
+            fr.metadata['depth'] = {'timestamp_us': int(native_depth.get_timestamp_us()),
+                                    'frame_number': int(native_depth.get_index())}
             # get_depth_scale() は mm / 1単位
             self.depth_scale = df.get_depth_scale() * 0.001
         if self.use_ir:
@@ -335,7 +366,24 @@ class _OrbbecCamera(_CameraBase):
                 return None
             fr.ir_left  = self._image(l, np.uint8)
             fr.ir_right = self._image(r, np.uint8)
+            for name, frame in [('ir_left', l), ('ir_right', r)]:
+                fr.metadata[name] = {'timestamp_us': int(frame.get_timestamp_us()), 'frame_number': int(frame.get_index())}
         return fr
+
+    def calibration(self):
+        def sensor(intr, dist):
+            return {'width': intr.width, 'height': intr.height,
+                    'fx': intr.fx, 'fy': intr.fy, 'ppx': intr.cx, 'ppy': intr.cy,
+                    'model': str(dist.model),
+                    'coeffs': [dist.k1, dist.k2, dist.p1, dist.p2, dist.k3, dist.k4, dist.k5, dist.k6]}
+        return {
+            'color': sensor(self._param.rgb_intrinsic, self._param.rgb_distortion),
+            'depth': sensor(self._param.depth_intrinsic, self._param.depth_distortion),
+            'depth_to_color': {'rotation': np.asarray(self._param.transform.rot, dtype=float).reshape(-1).tolist(),
+                               'translation_m': (np.asarray(self._param.transform.transform, dtype=float)
+                                                 .reshape(-1) * 0.001).tolist()},
+            'depth_scale': self.depth_scale,
+        }
 
     def intrinsics(self):
         i, d = self._param.rgb_intrinsic, self._param.rgb_distortion
