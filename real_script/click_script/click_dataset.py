@@ -15,11 +15,16 @@ W   = _cfg['camera']['width']
 H   = _cfg['camera']['height']
 FPS = _cfg['camera']['fps']
 
+# カメラSDKを初期化する前にQtの画面とイベント処理を準備する。
+cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+cv2.waitKey(1)
+
 # --- カメラ検出 ---
 try:
     _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
+    cv2.destroyAllWindows()
     sys.exit(1)
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
@@ -45,10 +50,10 @@ try:
     camera.start()
 except RuntimeError as e:
     print(e)
+    cv2.destroyAllWindows()
     sys.exit(1)
 print("マウスで検出対象をクリックしてください。's' で保存、'q' で終了")
 
-cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
 cv2.setMouseCallback('RealSense', mouse_callback)
 
 shot_count = 0

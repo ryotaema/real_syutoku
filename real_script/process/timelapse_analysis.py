@@ -26,6 +26,16 @@ except ImportError:
     sys.exit(1)
 
 
+# フォントの導入だけでなく、グラフでも日本語対応フォントを選ぶ。
+from matplotlib import font_manager
+
+_font_names = {font.name for font in font_manager.fontManager.ttflist}
+plt.rcParams['font.family'] = [
+    name for name in ('Noto Sans CJK JP', 'IPAexGothic', 'IPAGothic', 'TakaoGothic')
+    if name in _font_names
+] + ['DejaVu Sans']
+
+
 def _find_latest_session() -> Path:
     base = Path(load_config()['output']['timelapse_dir'])
     # 新構造: timelapse_data/YYYY_MMDD/timelapsN_.../detection_log.csv

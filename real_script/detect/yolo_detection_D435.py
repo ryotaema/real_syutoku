@@ -17,10 +17,15 @@ FPS = _cfg['camera']['fps']
 _root = Path(__file__).parent.parent
 YOLO_MODEL_PATH = str(_root / _cfg['model']['yolo_path'])
 
+# カメラSDKを初期化する前にQtの画面とイベント処理を準備する。
+cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+cv2.waitKey(1)
+
 try:
     _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
+    cv2.destroyAllWindows()
     exit(1)
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 
@@ -29,6 +34,7 @@ try:
     camera.start()
 except RuntimeError as e:
     print(e)
+    cv2.destroyAllWindows()
     exit(1)
 
 

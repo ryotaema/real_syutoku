@@ -208,23 +208,29 @@ class App:
         self.cam_box['values'] = ()
 
         def work():
+            diagnostics = []
             try:
-                cams = list_cameras()
+                cams = list_cameras(diagnostics=diagnostics)
             except Exception as e:
-                cams, err = [], str(e)
-            else:
-                err = None
-            self.root.after(0, lambda: self._set_cameras(cams, err))
+                cams = []
+                diagnostics.append(f'カメラの検索に失敗しました: {type(e).__name__}: {e}')
+            self.root.after(0, lambda: self._set_cameras(cams, diagnostics))
         threading.Thread(target=work, daemon=True).start()
 
-    def _set_cameras(self, cams, err):
+    def _set_cameras(self, cams, diagnostics):
         self.cameras = cams
         labels = [f"{c['name']}  (シリアル: {c['serial']})" for c in cams]
         self.cam_box['values'] = labels
         if cams:
             self.cam_box.current(0)
+            self._append(f'カメラを {len(cams)} 台検出しました。\n')
         else:
-            self.cam_var.set('カメラが見つかりません（つないで「再検出」）' + (f': {err}' if err else ''))
+            self.cam_var.set('カメラが見つかりません（詳細は下のログ）')
+            self._append('カメラが見つかりません。USB 接続と、Docker 内で使う場合は'
+                         'デバイス共有を確認し、「再検出」を押してください。\n')
+        if diagnostics:
+            self._append('カメラ用プログラム（SDK）の確認結果:\n'
+                         + '\n'.join(diagnostics) + '\n')
 
     def _selected_serial(self):
         i = self.cam_box.current()
@@ -347,8 +353,27 @@ class App:
 
     def open_out(self):
         d = _out_dir(self.out_kind)
-        d.mkdir(parents=True, exist_ok=True)
-        subprocess.Popen(['xdg-open', str(d)])
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self._append(f'保存先を作成できません: {d}\n{exc}\n')
+            return
+
+        def work():
+            try:
+                result = subprocess.run(
+                    ['xdg-open', str(d)], stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, encoding='utf-8', errors='replace',
+                    check=False)
+            except OSError as exc:
+                self.log_q.put(f'保存先を開けません: {d}\n{exc}\n')
+                return
+            if result.returncode:
+                self.log_q.put(f'保存先を開けません: {d}\n'
+                               f'{result.stdout.strip()}\n'
+                               'Docker内ではファイルマネージャーと画面共有を確認してください。\n')
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _on_close(self):
         if self.proc is not None:

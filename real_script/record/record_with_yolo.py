@@ -31,10 +31,15 @@ except Exception as e:
     print(f"Failed to load YOLO model: {e}")
     exit(1)
 
+# SDKのストリーム開始後にQtを初期化すると、画面作成や取得が止まる場合がある。
+cv2.namedWindow('RealSense with YOLO', cv2.WINDOW_AUTOSIZE)
+cv2.waitKey(1)
+
 try:
     _cam = detect_camera(_args.serial)
 except RuntimeError as e:
     print(f"エラー: {e}")
+    cv2.destroyAllWindows()
     exit(1)
 print(f"使用カメラ: {_cam['name']}  (シリアル: {_cam['serial']})")
 _has_ir      = (_cam['model'] != 'D405')
@@ -66,6 +71,7 @@ try:
 except KeyboardInterrupt:
     print("\nキャンセルされました。")
     video_writer.release()
+    cv2.destroyAllWindows()
     sys.exit(0)
 
 try:
@@ -73,6 +79,7 @@ try:
 except RuntimeError as e:
     print(e)
     video_writer.release()
+    cv2.destroyAllWindows()
     sys.exit(1)
 print("録画中... 'q' を押すと終了します")
 
@@ -87,7 +94,6 @@ try:
         video_writer.write(annotated_frame)
 
         images = np.hstack((annotated_frame, make_depth_colormap(fr.depth, _depth_alpha)))
-        cv2.namedWindow('RealSense with YOLO', cv2.WINDOW_AUTOSIZE)
         cv2.imshow('RealSense with YOLO', images)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):

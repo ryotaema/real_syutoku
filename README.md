@@ -28,6 +28,9 @@ real_syutoku/
 
 ## セットアップ
 
+PythonとメーカーSDKを使ってカメラへ直接接続します．ROSの導入やROS2ドライバのビルドは不要です．
+リポジトリのルートで次を実行します．
+
 ```bash
 pip install -r real_script/requirements.txt
 
@@ -38,7 +41,63 @@ pip install -r real_script/requirements_processing.txt
 sudo apt install python3-tk
 ```
 
-OpenVINOを使う場合は `openvino_env/` の仮想環境を使用してください．
+### Docker環境内で利用する場合（任意）
+
+Dockerを使う場合は，このリポジトリをコンテナにマウントし，Python依存もコンテナ内に導入します．
+GUI用の画面共有，日本語フォント，カメラへアクセスするためのUSB設定も必要です．
+用意済みのHumbleベースのDocker環境には，以下の設定と基本依存を含めています．
+このプロジェクトの実行にROS2ドライバのビルドは必要ありません．
+
+Docker構成ディレクトリから，起動時と同じCompose設定でコンテナに入ります．
+以下はCPU構成の例です．NVIDIA構成では
+`docker compose -f compose.yaml -f compose.nvidia.yaml exec humble bash` を使います．
+
+```bash
+docker compose exec humble bash
+```
+
+共有ワークスペース構成では，コンテナ内のワークスペースルートから次を実行します．
+
+```bash
+cd workspaces/real_syutoku
+python3 real_script/gui.py
+```
+
+独自にHumbleベースのイメージを用意する場合は，以下をコンテナ内で実行します．
+同じ環境に含まれる `cv_bridge` との互換性のため，NumPyとOpenCVに制約を付けています．
+
+```bash
+# コンテナ内の real_syutoku/ で実行
+python3 -m pip install 'pip>=24,<26' 'packaging>=24,<26' 'setuptools<80' wheel
+# Ubuntu 標準の blinker は削除せず，新しい版を追加する
+python3 -m pip install --ignore-installed --no-deps 'blinker>=1.9,<2'
+python3 -m pip install 'numpy<2' 'opencv-python<4.12' -r real_script/requirements.txt
+```
+
+Docker構成ディレクトリの `Dockerfile` には，この基本依存と日本語フォント
+（`fonts-noto-cjk`），Tk，UTF-8 ロケール，USB 確認用の `usbutils` を設定しています．
+日本語が四角で表示される場合は，コンテナ内で
+`fc-list :lang=ja family` に日本語フォントが出るか確認し，導入後に GUI を起動し直してください．
+
+カメラが見つからない場合は，まずコンテナ内で `lsusb` を実行し，RealSense または Orbbec が
+見えるか確認します．このアプリの対象は RealSense / Orbbec の深度カメラで，PC 内蔵の
+Web カメラは対象外です．GUI の「再検出」を押すと，SDK の未導入・読み込みエラーも下のログに
+表示されます．現在の Compose は `/dev:/dev` と `privileged: true` を設定済みです．
+ホストでの Orbbec の USB 権限設定は，後述の「Orbbec セットアップ」を参照してください．
+
+このDocker構成の推論にはCPU版またはNVIDIA版のPyTorchとUltralyticsを使用します．
+OpenVINOは任意機能で，このDockerイメージには含めていません．
+
+「保存先を開く」には，コンテナ内にもファイルマネージャーが必要です．
+用意済みのイメージにはThunarとMIME関連付けを含め，保存画像はRistretto，動画はmpvで開けます．
+開けなかった場合はGUI内のログに保存先とエラーを表示します．
+独自のイメージでは `xdg-utils` に加え，ファイルマネージャーと
+`desktop-file-utils`・`shared-mime-info` を導入してください．
+共有環境での実動作確認は，ワークスペースルートから
+`python3 scripts/checks/desktop_test.py --gui` で行えます．
+
+推論・クリック座標保存・推論付き録画では，カメラSDKより先にOpenCVの画面を初期化しています．
+SDKのストリーム開始後に初期化すると，環境によって画面作成やフレーム取得が停止することがあるためです．
 
 ## 使い方（GUI）
 
@@ -86,7 +145,7 @@ GUI は下記のスクリプトをボタンで起動しているだけなので�
 
 ```json
 "camera": {
-  "name": "Orbbec Gemini 336", "model": "G336", "serial": "CP9KB530001A",
+  "name": "Orbbec Gemini 336", "model": "G336", "serial": "G336_SERIAL_NUMBER",
   "backend": "orbbec", "resolution": [640, 480], "fps": 30, "depth_scale": 0.001
 }
 ```
@@ -239,7 +298,7 @@ python3 tools/rename_legacy.py data/click_test_data/250911_testdata_click --cam 
 | `--width N` | collect / record / detect | `--width 1280` |
 | `--height N` | collect / record / detect | `--height 720` |
 | `--tag NAME` | collect / click_script | `--tag greenhouse`（セッションディレクトリ名にのみ付与） |
-| `--serial SERIAL` | collect / record / detect / click_dataset | `--serial CP9KB530001A`（複数台接続時に使うカメラを指定．省略時は選択ダイアログ） |
+| `--serial SERIAL` | collect / record / detect / click_dataset | `--serial G336_SERIAL_NUMBER`（複数台接続時に使うカメラを指定．省略時は選択ダイアログ） |
 | `--model PATH` | record_with_yolo / detect | `--model /path/to/model.pt` |
 | `--conf F` | vino_yolo_detection / timelapse_detect（--detect 時） | `--conf 0.5` |
 | `--interval N` | timelapse_detect | `--interval 300` |

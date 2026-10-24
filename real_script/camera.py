@@ -34,20 +34,35 @@ class Frames:
 # デバイス列挙
 # ============================================================================
 
-def list_devices():
+def list_devices(diagnostics=None):
     """接続されている全カメラを列挙する。
+
+    diagnostics にリストを渡すと、SDK ごとの読み込み・検出失敗の詳細を追記する。
+    片方の SDK が使えない場合も、もう片方のカメラは返す。
 
     Returns:
         list[dict]: {'name': str, 'serial': str, 'backend': 'realsense' | 'orbbec'}
     """
-    return _list_realsense() + _list_orbbec()
+    devices = []
+    for label, module, enumerate_devices in (
+        ('RealSense', 'pyrealsense2', _list_realsense),
+        ('Orbbec', 'pyorbbecsdk', _list_orbbec),
+    ):
+        try:
+            devices.extend(enumerate_devices())
+        except Exception as exc:
+            if diagnostics is not None:
+                missing = isinstance(exc, ModuleNotFoundError) and exc.name == module
+                reason = ('SDK がインストールされていません' if missing
+                          else 'SDK の読み込み、またはカメラの検出に失敗しました')
+                diagnostics.append(
+                    f'{label}（{module}）: {reason}\n'
+                    f'  {type(exc).__name__}: {exc}')
+    return devices
 
 
 def _list_realsense():
-    try:
-        import pyrealsense2 as rs
-    except ImportError:
-        return []
+    import pyrealsense2 as rs
     devs = []
     for dev in rs.context().query_devices():
         devs.append({
@@ -67,10 +82,7 @@ def _import_orbbec():
 
 
 def _list_orbbec():
-    try:
-        ob = _import_orbbec()
-    except ImportError:
-        return []
+    ob = _import_orbbec()
     ctx = ob.Context()      # DeviceList より先に破棄されないよう保持する
     dl  = ctx.query_devices()
     return [{

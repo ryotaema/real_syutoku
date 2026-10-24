@@ -15,10 +15,10 @@ _CAMERA_MODELS = {
 }
 
 
-def list_cameras():
-    """接続されている全カメラ（RealSense / Orbbec）を model 付きで返す。"""
+def list_cameras(diagnostics=None):
+    """接続カメラを model 付きで返す。diagnostics には SDK ごとの問題を追記する。"""
     from camera import list_devices
-    devices = list_devices()
+    devices = list_devices(diagnostics=diagnostics)
     for dev in devices:
         dev['model'] = _model_from_name(dev['name'])
     return devices
@@ -38,9 +38,14 @@ def detect_camera(serial=None):
     Raises:
         RuntimeError: デバイスが見つからない・選択がキャンセルされた場合
     """
-    devices = list_cameras()
+    diagnostics = []
+    devices = list_cameras(diagnostics=diagnostics)
     if not devices:
-        raise RuntimeError("カメラ（RealSense / Orbbec）が接続されていません")
+        message = ('カメラ（RealSense / Orbbec）が見つかりません。USB 接続と、'
+                   'Docker 内で使う場合はデバイス共有を確認してください。')
+        if diagnostics:
+            message += '\nカメラ用プログラム（SDK）の確認結果:\n' + '\n'.join(diagnostics)
+        raise RuntimeError(message)
 
     if serial:
         matched = [d for d in devices if d['serial'] == serial]
