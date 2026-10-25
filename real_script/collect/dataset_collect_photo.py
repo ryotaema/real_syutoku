@@ -1,4 +1,4 @@
-"""RGB・深度・IR・PLYを、[s] または --once で同時保存する。"""
+"""画像を[s]で保存する。--all-dataを付けるとPLY等もまとめて保存する。"""
 import json
 import sys
 import time
@@ -15,11 +15,14 @@ from snapshot import create_session, save_frame_bundle, preview_grid
 
 def main():
     parser = build_parser()
-    parser.add_argument('--once', action='store_true', help='ウォームアップ後、全データを1枚保存して終了')
-    parser.add_argument('--warmup', type=float, default=2.0, help='露光安定待ち時間（秒、既定2）')
+    parser.add_argument('--all-data', action='store_true', help='PLYとロスレス画像も含めて全データを保存')
+    parser.add_argument('--once', action='store_true', help='1枚保存して終了')
+    parser.add_argument('--warmup', type=float, default=None, help='露光安定待ち時間（秒、通常0・all-dataは2）')
     parser.add_argument('--timeout', type=float, default=10.0, help='必要なフレームの取得待ち上限（秒）')
     parser.add_argument('--no-preview', action='store_true', help='--once時に画面を表示しない')
     args = parser.parse_args()
+    if args.warmup is None:
+        args.warmup = 2.0 if args.all_data else 0.0
     if args.warmup < 0 or args.timeout <= 0 or (args.no_preview and not args.once):
         parser.error('warmupは0以上、timeoutは正の値、no-previewはonceと併用してください')
     cfg = apply_args(load_config(), args)
@@ -27,7 +30,8 @@ def main():
     camera = session = None
     started = False
     frames_meta = []
-    metadata = {'shot_count': 0, 'frames': frames_meta}
+    metadata = {'shot_count': 0, 'frames': frames_meta,
+                'capture_mode': 'all_data' if args.all_data else 'images'}
     error = None
     try:
         if not args.no_preview:
@@ -43,7 +47,8 @@ def main():
         started = True
         session = create_session(cfg['output']['images_dir'], cam_code(info['model']), args.tag)
         print(f'保存先: {session.dir}', flush=True)
-        print('RGB・深度・IR・PLYを保存します。[s] 保存  [q] 終了', flush=True)
+        label = '全データ（PLY含む）' if args.all_data else '画像（PLYなし）'
+        print(f'{label}を保存します。[s] 保存  [q] 終了', flush=True)
         begin = last_frame = time.monotonic()
         while True:
             frame = camera.read(timeout_ms=1000)
@@ -58,7 +63,7 @@ def main():
             depth_cm = make_depth_colormap(frame.depth, alpha)
             if not args.no_preview:
                 preview = preview_grid(frame.color, depth_cm, [frame.ir_left, frame.ir_right])
-                cv2.putText(preview, f'[s] Save all  [q] Quit   Saved: {len(frames_meta)}',
+                cv2.putText(preview, f'[s] Save {"all" if args.all_data else "images"}  [q] Quit   Saved: {len(frames_meta)}',
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 cv2.imshow(window, preview)
                 key = cv2.waitKey(1) & 0xff
@@ -67,20 +72,21 @@ def main():
             if time.monotonic() - begin < args.warmup:
                 continue
             if args.once or key == ord('s'):
-                if not frames_meta:
+                if args.all_data and not frames_meta:
                     (session.dir / 'intrinsics.json').write_text(json.dumps(camera.intrinsics(), indent=2))
                     (session.dir / 'calibration.json').write_text(json.dumps(camera.calibration(), indent=2))
                     (session.dir / 'camera_settings.json').write_text(json.dumps(cfg['camera'], indent=2))
-                record = save_frame_bundle(session, len(frames_meta) + 1, camera, frame, depth_cm)
+                record = save_frame_bundle(session, len(frames_meta) + 1, camera, frame, depth_cm, all_data=args.all_data)
                 record['saved_at'] = datetime.now(timezone.utc).isoformat()
                 frames_meta.append(record)
                 metadata.update(camera=camera_metadata(info, width, height, fps, camera),
                                 modalities=list(record['files']), shot_count=len(frames_meta), frames=frames_meta,
-                                ply_format={'unit': 'm', 'axes': 'realsense_viewer', 'color': True},
                                 depth_aligned_to='color', depth_raw_aligned=False,
                                 unavailable_modalities=[] if has_ir else ['ir_left', 'ir_right'])
+                if args.all_data:
+                    metadata['ply_format'] = {'unit': 'm', 'axes': 'realsense_viewer', 'color': True}
                 session.write_metadata(**metadata)
-                print(f'[{len(frames_meta)}枚目] 全データ保存完了（PLY含む）', flush=True)
+                print(f'[{len(frames_meta)}枚目] {label}の保存完了', flush=True)
                 if args.once:
                     break
     except Exception as exc:  # CLIの境界で失敗を記録し、カメラはfinallyで解放する。

@@ -126,7 +126,7 @@ class CalibrationTests(unittest.TestCase):
 
 
 class CaptureTests(unittest.TestCase):
-    def run_capture(self, camera, model='G336', failed_write=False, once=True):
+    def run_capture(self, camera, model='G336', failed_write=False, once=True, all_data=True):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         cfg = {'camera': {'width': 2, 'height': 2, 'fps': 30,
@@ -136,7 +136,7 @@ class CaptureTests(unittest.TestCase):
         with patch.object(photo, 'load_config', return_value=cfg), \
              patch.object(photo, 'detect_camera', return_value=info), \
              patch.object(photo, 'open_camera', return_value=camera) as opener, \
-             patch.object(sys, 'argv', ['capture', '--warmup', '0'] + (['--once', '--no-preview'] if once else [])):
+             patch.object(sys, 'argv', ['capture', '--warmup', '0'] + (['--all-data'] if all_data else []) + (['--once', '--no-preview'] if once else [])):
             if failed_write:
                 with patch.object(snapshot.cv2, 'imwrite', return_value=False):
                     status = photo.main()
@@ -194,6 +194,23 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(result[0], 0)
         self.assertEqual(result[1]['shot_count'], 1)
         self.assertIn('pointcloud', result[1]['frames'][0]['files'])
+
+
+    def test_normal_capture_restores_images_without_ply(self):
+        camera = FakeCamera()
+        with patch.object(camera, 'save_ply', side_effect=AssertionError('PLY must not be computed')) as ply, \
+             patch.object(camera, 'calibration', side_effect=AssertionError('all-data calibration is not needed')):
+            status, metadata, directory, _ = self.run_capture(camera, all_data=False)
+        self.assertEqual(status, 0)
+        self.assertEqual(metadata['capture_mode'], 'images')
+        self.assertNotIn('ply_format', metadata)
+        files = metadata['frames'][0]['files']
+        self.assertEqual(set(files), {'color', 'depth_colormap', 'ir_left', 'ir_right', 'ir_left_color', 'ir_right_color'})
+        self.assertTrue(all(path.endswith('.jpg') for path in files.values()))
+        self.assertFalse((directory / 'pointcloud').exists())
+        self.assertFalse(list(directory.rglob('*.ply')))
+        ply.assert_not_called()
+
 
 
 if __name__ == '__main__':

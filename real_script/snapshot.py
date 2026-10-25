@@ -1,4 +1,4 @@
-"""1ショットの各画像とPLYを、同じ番号でまとめて保存する。ROSは不要。"""
+"""1ショットの画像と任意のPLYを、同じ番号で保存する。ROSは不要。"""
 from datetime import datetime
 import os
 from pathlib import Path
@@ -24,11 +24,12 @@ def create_session(base_dir, cam, tag=None):
         return Session(base_dir, cam=cam, tag=tag, started_at=now)
 
 
-def write_bundle(session, index, images, pointcloud_writer):
-    """書き込み失敗を検出し、画像とPLYが揃ってから保存先へ移す。"""
+def write_bundle(session, index, images, pointcloud_writer=None):
+    """書き込み失敗を検出し、指定した画像・任意のPLYが揃ってから保存先へ移す。"""
     targets = {name: Path(session.path(index, name, ext=ext))
                for name, (_, ext) in images.items()}
-    targets['pointcloud'] = Path(session.path(index, 'pointcloud', ext='ply'))
+    if pointcloud_writer is not None:
+        targets['pointcloud'] = Path(session.path(index, 'pointcloud', ext='ply'))
     for path in targets.values():
         if path.exists():
             raise FileExistsError(f'既存データは上書きしません: {path}')
@@ -40,11 +41,12 @@ def write_bundle(session, index, images, pointcloud_writer):
             if not cv2.imwrite(str(path), image):
                 raise OSError(f'画像を書き込めません: {targets[name]}')
             staged[name] = path
-        path = Path(directory) / targets['pointcloud'].name
-        pointcloud_writer(str(path))
-        if not path.is_file() or path.stat().st_size == 0:
-            raise OSError('PLYを書き込めません')
-        staged['pointcloud'] = path
+        if pointcloud_writer is not None:
+            path = Path(directory) / targets['pointcloud'].name
+            pointcloud_writer(str(path))
+            if not path.is_file() or path.stat().st_size == 0:
+                raise OSError('PLYを書き込めません')
+            staged['pointcloud'] = path
         try:
             for name, path in staged.items():
                 os.replace(path, targets[name])
@@ -69,16 +71,18 @@ def preview_grid(color, depth_colormap, infrared):
     return np.vstack([np.hstack(tiles[i:i + 2]) for i in range(0, len(tiles), 2)])
 
 
-def save_frame_bundle(session, index, camera, frame, depth_colormap):
-    images = {'color': (frame.color, 'jpg'), 'color_raw': (frame.color, 'png'),
-              'depth': (frame.depth, 'png'), 'depth_colormap': (depth_colormap, 'jpg')}
-    if frame.depth_raw is not None:
-        images['depth_raw'] = (frame.depth_raw, 'png')
+def save_frame_bundle(session, index, camera, frame, depth_colormap, all_data=False):
+    images = {'color': (frame.color, 'jpg'), 'depth_colormap': (depth_colormap, 'jpg')}
+    if all_data:
+        images.update(color_raw=(frame.color, 'png'), depth=(frame.depth, 'png'))
+        if frame.depth_raw is not None:
+            images['depth_raw'] = (frame.depth_raw, 'png')
     for name in ('ir_left', 'ir_right'):
         image = getattr(frame, name)
         if image is not None:
-            images[name] = (image, 'png')
+            images[name] = (image, 'png' if all_data else 'jpg')
             images[name + '_color'] = (cv2.applyColorMap(image, cv2.COLORMAP_JET), 'jpg')
-    files = write_bundle(session, index, images, lambda path: camera.save_ply(frame, path))
+    writer = (lambda path: camera.save_ply(frame, path)) if all_data else None
+    files = write_bundle(session, index, images, writer)
     return {'index': index, 'files': files, 'streams': frame.metadata,
             'shapes': {name: list(image.shape) for name, (image, _) in images.items()}}
